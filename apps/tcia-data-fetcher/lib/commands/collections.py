@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import typer
 from rich.console import Console
 
@@ -51,7 +53,11 @@ def describe_collection(
             result["PatientCount"] = int(counts.iloc[0, 1])
         print_json([result])
     else:
+        row = match.iloc[0]
         console.print(f"[bold]{name}[/bold]")
-        console.print(match.iloc[0].to_string())
+        for col, val in row.items():
+            val_str = str(val)
+            val_clean = re.sub(r"<[^>]+>", "", val_str)
+            console.print(f"  {col}: {val_clean}")
         if not counts.empty:
             console.print(f"\n[bold]Patient count:[/bold] {int(counts.iloc[0, 1])}")

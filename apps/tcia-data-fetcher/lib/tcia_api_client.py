@@ -99,13 +99,20 @@ class TCIAApiClient:
 
     def download_series(
         self,
-        series_data: str | list[str],
+        series_data: str | list[str] | pd.DataFrame,
         path: str = "tciaDownload",
         as_zip: bool = False,
         with_hash: bool = False,
         max_workers: int = 10,
         number: int = 0,
     ) -> None:
+        if isinstance(series_data, pd.DataFrame):
+            input_type = "df"
+        elif isinstance(series_data, list):
+            input_type = "list"
+        else:
+            input_type = ""
+
         nbia.downloadSeries(
             series_data=series_data,
             path=path,
@@ -113,6 +120,7 @@ class TCIAApiClient:
             hash="yes" if with_hash else "",
             max_workers=max_workers,
             number=number,
+            input_type=input_type,
         )
 
     def download_image(self, series_uid: str, sop_uid: str, path: str = "") -> None:

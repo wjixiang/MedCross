@@ -1,0 +1,15 @@
+[project]
+name = "opengwas-cli"
+version = "0.1.0"
+description = "CLI for querying and downloading GWAS summary statistics from IEU OpenGWAS database"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "gwas-client",
+    "typer>=0.24.1",
+    "rich>=13.0.0",
+    "pandas>=2.2",
+]
+
+[project.scripts]
+opengwas = "main:app"

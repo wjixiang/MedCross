@@ -1,5 +1,5 @@
 [project]
-name = "tcia-data-fetcher"
+name = "tcia-cli"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"

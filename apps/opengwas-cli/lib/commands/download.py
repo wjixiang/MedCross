@@ -9,9 +9,9 @@ from rich.console import Console
 from rich.progress import (
     BarColumn,
     DownloadColumn,
+    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
-    TaskProgressColumn,
     TimeElapsedColumn,
     TransferSpeedColumn,
 )
@@ -86,14 +86,14 @@ def download(
 
     with Progress(
         SpinnerColumn(),
-        TaskProgressColumn(),
+        MofNCompleteColumn(),
         BarColumn(),
         DownloadColumn(),
         TransferSpeedColumn(),
         TimeElapsedColumn(),
         console=console,
     ) as progress:
-        task_id = progress.add_task("download", total=len(tasks))
+        task_id = progress.add_task("files", total=len(tasks))
 
         with httpx.Client(timeout=300.0, proxy=download_proxy) as dl_client:
             for url, filepath in tasks:
@@ -106,7 +106,7 @@ def download(
                     with dl_client.stream("GET", url, follow_redirects=True) as resp:
                         resp.raise_for_status()
                         total = int(resp.headers.get("content-length", 0))
-                        dl_task = progress.add_task(dest.name, total=total or None)
+                        dl_task = progress.add_task(dest.name, total=total if total > 0 else None)
 
                         with open(tmp_path, "wb") as f:
                             for chunk in resp.iter_bytes(chunk_size=1024 * 64):

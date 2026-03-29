@@ -1,0 +1,25 @@
+[project]
+name = "pymr"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "wjixiang", email = "wjixiang27@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "bottleneck>=1.6.0",
+    "cyvcf2>=0.32.1",
+    "dask[complete]>=2026.3.0",
+    "numbagg>=0.9.4",
+    "numcodecs>=0.14.0",
+    "numpy>=2.4.3",
+    "pandas>=3.0.1",
+    "scipy>=1.17.1",
+    "xarray>=2026.2.0",
+    "zarr>=3.0.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.9,<0.11.0"]
+build-backend = "uv_build"

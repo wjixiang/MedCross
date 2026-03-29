@@ -13,9 +13,11 @@ import pandas as pd
 from dotenv import load_dotenv
 from gwas_client import OpenGWAS_API_Client
 
-# 从项目根目录向上搜索 .env，同时检查 libs/gwas-client/.env
+# 搜索 .env：CLI 自身目录 > 项目根目录 > libs/gwas-client/
+_cli_root = Path(__file__).resolve().parents[1]  # apps/opengwas-cli/lib -> apps/opengwas-cli
 _workspace_root = Path(__file__).resolve().parents[3]  # apps/opengwas-cli/lib -> project root
 for env_path in [
+    _cli_root / ".env",
     _workspace_root / ".env",
     _workspace_root / "libs" / "gwas-client" / ".env",
 ]:

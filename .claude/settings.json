@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./TCIA_Data_Retriever-x86_64.AppImage --appimage-extract)",
+      "Bash(ldd /mnt/disk1/project/MedCross/scripts/squashfs-root/TCIA_Data_Retriever)",
+      "Bash(echo \"DISPLAY=$DISPLAY\")",
+      "Bash(echo \"WAYLAND_DISPLAY=$WAYLAND_DISPLAY\")",
+      "Bash(echo \"XDG_SESSION_TYPE=$XDG_SESSION_TYPE\")",
+      "WebSearch",
+      "Bash(find /mnt/disk1/project/MedCross -path */tcia_utils* -name *.py)",
+      "Bash(uv pip:*)",
+      "Bash(uv sync:*)",
+      "Bash(.venv/bin/pip list:*)",
+      "Bash(python -c \"import typer; print\\(typer.__version__\\)\")",
+      "Bash(python -c \"import rich; print\\(rich.__version__\\)\")",
+      "Bash(uv run:*)",
+      "Bash(git -C /mnt/disk1/project/MedCross status)",
+      "Bash(git -C /mnt/disk1/project/MedCross diff)",
+      "Bash(git -C /mnt/disk1/project/MedCross log --oneline -5)",
+      "Bash(git -C /mnt/disk1/project/MedCross add apps/tcia-data-fetcher/main.py apps/tcia-data-fetcher/pyproject.toml apps/tcia-data-fetcher/lib/output.py apps/tcia-data-fetcher/lib/tcia_api_client.py apps/tcia-data-fetcher/lib/commands/__init__.py apps/tcia-data-fetcher/lib/commands/collections.py apps/tcia-data-fetcher/lib/commands/patients.py apps/tcia-data-fetcher/lib/commands/series.py apps/tcia-data-fetcher/lib/commands/download.py apps/tcia-data-fetcher/lib/commands/search.py apps/tcia-data-fetcher/lib/commands/report.py apps/tcia-data-fetcher/lib/commands/dicom.py apps/tcia-data-fetcher/README.md apps/tcia-data-fetcher/lib/__tests__/tcia-api-client.test.py)",
+      "Bash(git -C:*)",
+      "Bash(python3 -c \"import tcia_utils; import inspect; print\\(inspect.getsource\\(tcia_utils.nbia.downloadSeries\\)\\)\")",
+      "Bash(python3 -c \"import tcia_utils.nbia as nbia; funcs = [f for f in dir\\(nbia\\) if ''hash'' in f.lower\\(\\) or ''verify'' in f.lower\\(\\) or ''check'' in f.lower\\(\\) or ''integrity'' in f.lower\\(\\) or ''md5'' in f.lower\\(\\) or ''validate'' in f.lower\\(\\)]; print\\(funcs\\)\")",
+      "Bash(python3 -c \"import tcia_utils.nbia as nbia; funcs = [f for f in dir\\(nbia\\) if not f.startswith\\(''_''\\)]; print\\(''\\\\n''.join\\(funcs\\)\\)\")",
+      "Bash(python3 -c \":*)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''lib/commands/download.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\(''/mnt/disk1/project/MedCross/apps/tcia-data-fetcher/lib/commands/download.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(python3 -c \"import tcia_utils; print\\(tcia_utils.__version__\\); import inspect; print\\(inspect.getfile\\(tcia_utils.nbia\\)\\)\")",
+      "Bash(python3 -c \"import tcia_utils; import inspect; print\\(inspect.getfile\\(tcia_utils.nbia\\)\\); print\\(dir\\(tcia_utils.nbia\\)\\)\")"
+    ]
+  }
+}

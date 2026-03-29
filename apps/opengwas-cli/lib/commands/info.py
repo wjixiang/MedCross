@@ -48,7 +48,7 @@ def list_datasets(
     if json_output:
         print_json(df)
     else:
-        print_table(df, columns=_INFO_COLUMNS, title="GWAS Datasets")
+        print_table(df, columns=_INFO_COLUMNS, column_width={"trait": 0}, title="GWAS Datasets")
 
 
 @app.command("show")

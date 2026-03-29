@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typer
 
-from lib.commands import assoc, info, ld, phewas, status, tophits, variants
+from lib.commands import assoc, download, info, ld, phewas, status, tophits, variants
 
 app = typer.Typer(
     name="opengwas",
@@ -17,6 +17,7 @@ app.add_typer(tophits.app, name="tophits")
 app.add_typer(phewas.app, name="phewas")
 app.add_typer(variants.app, name="variants")
 app.add_typer(ld.app, name="ld")
+app.add_typer(download.app, name="download")
 
 
 if __name__ == "__main__":

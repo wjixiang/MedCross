@@ -24,10 +24,16 @@ def print_table(
     df: pd.DataFrame,
     columns: list[str] | None = None,
     title: str | None = None,
+    column_width: dict[str, int] | None = None,
 ) -> None:
-    """Render a DataFrame as a rich table, auto-fitting to terminal width."""
+    """Render a DataFrame as a rich table, auto-fitting to terminal width.
+
+    Args:
+        column_width: 指定列的最大宽度，未指定的列仍使用默认截断。
+                    例如 {"trait": 0} 表示 trait 列不截断。
+    """
     if df.empty:
-        console.print("[dim]No results found.[/dim]")
+        console.print("[dim]No results found.[dim]")
         return
 
     if columns:
@@ -41,14 +47,23 @@ def print_table(
         return
 
     available_width = _term_width - 3 - 2 * num_cols
-    col_width = min(_MAX_CELL, max(8, available_width // num_cols))
+
+    # 计算每列宽度
+    col_widths: list[int] = []
+    for col in df.columns:
+        if column_width and col in column_width:
+            # 0 表示不截断，用终端剩余宽度（最小 10）
+            cw = max(10, available_width - sum(col_widths))
+        else:
+            cw = min(_MAX_CELL, max(8, available_width // num_cols))
+        col_widths.append(cw)
 
     table = Table(title=title, show_lines=False, header_style="bold cyan")
-    for col in df.columns:
-        table.add_column(col, max_width=col_width, no_wrap=True)
+    for col, cw in zip(df.columns, col_widths):
+        table.add_column(col, max_width=cw, no_wrap=True)
 
     for _, row in df.iterrows():
-        values = [_truncate(row[col], col_width) for col in df.columns]
+        values = [_truncate(row[col], cw) for col, cw in zip(df.columns, col_widths)]
         table.add_row(*values)
 
     console.print(table)

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "gwas-client",
+    "pymr",
     "typer>=0.24.1",
     "rich>=13.0.0",
     "pandas>=2.2",

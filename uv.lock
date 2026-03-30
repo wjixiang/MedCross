@@ -1341,6 +1341,7 @@ source = { virtual = "apps/opengwas-cli" }
 dependencies = [
     { name = "gwas-client" },
     { name = "pandas" },
+    { name = "pymr" },
     { name = "rich" },
     { name = "typer" },
 ]
@@ -1349,6 +1350,7 @@ dependencies = [
 requires-dist = [
     { name = "gwas-client", editable = "libs/gwas-client" },
     { name = "pandas", specifier = ">=2.2" },
+    { name = "pymr", editable = "libs/pymr" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "typer", specifier = ">=0.24.1" },
 ]
@@ -1663,7 +1665,7 @@ wheels = [
 
 [[package]]
 name = "pymr"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "libs/pymr" }
 dependencies = [
     { name = "bottleneck" },
@@ -1673,6 +1675,7 @@ dependencies = [
     { name = "numcodecs" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "plotnine" },
     { name = "scipy" },
     { name = "xarray" },
     { name = "zarr" },
@@ -1687,6 +1690,7 @@ requires-dist = [
     { name = "numcodecs", specifier = ">=0.14.0" },
     { name = "numpy", specifier = ">=2.4.3" },
     { name = "pandas", specifier = ">=3.0.1" },
+    { name = "plotnine", specifier = ">=0.15.3" },
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "xarray", specifier = ">=2026.2.0" },
     { name = "zarr", specifier = ">=3.0.0" },

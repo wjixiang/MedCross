@@ -11,3 +11,4 @@ members = ["libs/*", "apps/*"]
 
 [tool.uv.sources]
 "gwas-client" = { workspace = true}
+"pymr" = { workspace = true}

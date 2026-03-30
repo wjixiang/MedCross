@@ -1,7 +1,7 @@
 [project]
 name = "pymr"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "Python Mendelian Randomization analysis toolkit"
 readme = "README.md"
 authors = [
     { name = "wjixiang", email = "wjixiang27@gmail.com" }
@@ -15,6 +15,7 @@ dependencies = [
     "numcodecs>=0.14.0",
     "numpy>=2.4.3",
     "pandas>=3.0.1",
+    "plotnine>=0.15.3",
     "scipy>=1.17.1",
     "xarray>=2026.2.0",
     "zarr>=3.0.0",

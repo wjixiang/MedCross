@@ -396,24 +396,51 @@ def dataset_to_zarr(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_study_path(study_dir: Path) -> Path:
+    """从研究目录解析出 Zarr 路径，不存在则从 VCF.gz 自动转换。"""
+    study_name = study_dir.name
+
+    # 优先查找同目录下的 .zarr
+    zarr_path = study_dir / f"{study_name}.zarr"
+    if zarr_path.exists():
+        return zarr_path
+
+    # 回退到 VCF.gz
+    vcf_path = study_dir / f"{study_name}.vcf.gz"
+    if vcf_path.exists():
+        print(f"[pymr] 自动转换: {vcf_path} → {zarr_path}")
+        vcf_to_zarr(vcf_path, zarr_path)
+        return zarr_path
+
+    raise FileNotFoundError(
+        f"在 {study_dir} 下未找到 {study_name}.zarr 或 {study_name}.vcf.gz"
+    )
+
+
 def load_gwas(
-    zarr_path: str | Path,
+    path: str | Path,
     *,
     chrom: str | int | None = None,
     chunks: dict | None = None,
+    chunk_size: int = 500_000,
 ) -> xr.Dataset:
-    """从 Zarr 加载 GWAS summary statistics。
+    """加载 GWAS summary statistics。
+
+    传入研究数据目录，自动查找 .zarr 或从 .vcf.gz 转换后加载。
 
     Parameters
     ----------
-    zarr_path : str | Path
-        Zarr 目录路径（由 vcf_to_zarr 生成）。
+    path : str | Path
+        研究数据目录，例如 ``/data/mr/ebi-a-GCST90093110``。
+        目录下需包含 ``{name}.zarr`` 或 ``{name}.vcf.gz`` + ``.tbi``。
     chrom : str | int | None
         按染色体筛选。支持 '1'-'22', 'X', 'Y', 'MT' 或对应的整数 1-25。
         为 None 时加载全部数据。
     chunks : dict | None
         dask 分块配置，例如 ``{"variant": 100_000}``。
         为 None 时直接加载到内存（非惰性）。
+    chunk_size : int
+        仅在 VCF→Zarr 自动转换时使用，每个 chunk 包含的变异数量。
 
     Returns
     -------
@@ -421,13 +448,12 @@ def load_gwas(
 
     Examples
     --------
-    >>> ds = load_gwas("/data/mr/ebi-a-GCST90093110.zarr")
-    >>> ds = load_gwas("/data/mr/ebi-a-GCST90093110.zarr", chrom="1",
+    >>> ds = load_gwas("/data/mr/ebi-a-GCST90093110")
+    >>> ds = load_gwas("/data/mr/ebi-a-GCST90093110", chrom="1",
     ...                chunks={"variant": 100_000})
     """
-    zarr_path = Path(zarr_path)
-    if not zarr_path.exists():
-        raise FileNotFoundError(f"Zarr 目录不存在: {zarr_path}")
+    study_dir = Path(path)
+    zarr_path = _resolve_study_path(study_dir)
 
     ds = xr.open_zarr(str(zarr_path), chunks=chunks)  # type: ignore[arg-type]
 

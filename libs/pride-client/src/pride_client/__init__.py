@@ -1,2 +1,37 @@
-def hello() -> str:
-    return "Hello from pride-client!"
+from .api_client import API_Client, PRIDE_API_Client_Config, defaultPRIDEApiClientConfig
+from .models import (
+    PRIDEAPProject,
+    PRIDEAPProteinSearchQuery,
+    PRIDEAPSearchQuery,
+    PRIDEFacetQuery,
+    PRIDEFile,
+    PRIDEProjectDownloadLinks,
+    PRIDEProjectMetadata,
+    PRIDE_Project,
+    PRIDE_Project_Summary,
+    PRIDEProjectsByProtein,
+    PRIDEProjectsByProteinWrapper,
+    PRIDESearchQuery,
+    Protein,
+    ProteinAccessionsPageResponse,
+)
+
+__all__ = [
+    "API_Client",
+    "PRIDE_API_Client_Config",
+    "defaultPRIDEApiClientConfig",
+    "PRIDEAPProject",
+    "PRIDEAPProteinSearchQuery",
+    "PRIDEAPSearchQuery",
+    "PRIDEFacetQuery",
+    "PRIDEFile",
+    "PRIDEProjectDownloadLinks",
+    "PRIDEProjectMetadata",
+    "PRIDE_Project",
+    "PRIDE_Project_Summary",
+    "PRIDEProjectsByProtein",
+    "PRIDEProjectsByProteinWrapper",
+    "PRIDESearchQuery",
+    "Protein",
+    "ProteinAccessionsPageResponse",
+]

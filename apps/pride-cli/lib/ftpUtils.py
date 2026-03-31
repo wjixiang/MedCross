@@ -19,14 +19,24 @@ def download_file(
     local_path: Path,
     progress: Progress,
     task_id,
+    resume: bool = True,
 ) -> None:
-    """Download a single file with progress tracking."""
-    size = ftp.size(remote_path)
+    """Download a single file with progress tracking, optionally resuming from existing local size."""
+    remote_size = ftp.size(remote_path) or 0
     progress.update(
-        task_id, total=size or 0, description=remote_path.rsplit("/", 1)[-1]
+        task_id, total=remote_size, description=remote_path.rsplit("/", 1)[-1]
     )
 
-    with open(local_path, "wb") as f:
+    rest_offset = None
+    mode = "wb"
+    if resume and local_path.exists():
+        local_size = local_path.stat().st_size
+        if 0 < local_size < remote_size:
+            mode = "ab"
+            rest_offset = local_size
+            progress.update(task_id, completed=local_size)
+
+    with open(local_path, mode) as f:
         ftp.retrbinary(
             f"RETR {remote_path}",
             callback=lambda data: (
@@ -34,6 +44,7 @@ def download_file(
                 progress.update(task_id, advance=len(data)),
             ),
             blocksize=8192,
+            rest=rest_offset,
         )
 
 
@@ -43,6 +54,7 @@ def download_dir(
     local_dir: Path,
     progress: Progress,
     task_id: int | None = None,
+    resume: bool = True,
 ) -> None:
     """Recursively download all files from a remote FTP directory."""
     local_dir.mkdir(parents=True, exist_ok=True)
@@ -61,8 +73,8 @@ def download_dir(
         local_path = local_dir / name
 
         if is_dir:
-            download_dir(ftp, remote_path, local_path, progress, task_id)
+            download_dir(ftp, remote_path, local_path, progress, task_id, resume)
         else:
             child_task = progress.add_task(name, total=0)
-            download_file(ftp, remote_path, local_path, progress, child_task)
+            download_file(ftp, remote_path, local_path, progress, child_task, resume)
             progress.update(child_task, description=f"[green]{name}[/green]")

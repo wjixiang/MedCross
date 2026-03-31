@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import typer
 
 from lib.output import print_error, print_json, print_table

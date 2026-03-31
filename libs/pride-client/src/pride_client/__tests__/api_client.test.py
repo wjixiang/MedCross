@@ -15,7 +15,9 @@ async def testSearchProjects():
     query = PRIDESearchQuery(keyword='proteome', filter='projectTitle', pageSize=5, page=0)
     results = await client.searchProjects(query)
     print(f"\nSearch 'proteome' found {len(results)} results:")
-    for p in results:
-        print(f"  {p.accession} - {p.title}")
+    
+async def testGetDownloadLinks():
+    result = await client.downloadProject("PXD064059")
+    print(result)
 
-asyncio.run(testSearchProjects())
+asyncio.run(testGetDownloadLinks())

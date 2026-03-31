@@ -4,7 +4,7 @@ import asyncio
 from typing import List, Tuple
 
 from pride_client.api_client import API_Client, PRIDE_API_Client_Config
-from pride_client.models import PRIDE_Project, PRIDE_Project_Summary, PRIDESearchQuery
+from pride_client.models import PRIDE_Project, PRIDE_Project_Summary, PRIDESearchQuery, PRIDEProjectDownloadLinks
 
 _default_config = PRIDE_API_Client_Config(
     baseUrl="https://www.ebi.ac.uk/pride/ws/archive/v3"
@@ -24,3 +24,6 @@ def search_projects(query: PRIDESearchQuery) -> Tuple[list[PRIDE_Project_Summary
 def get_project(accession: str) -> PRIDE_Project:
     """Get project details by accession (sync wrapper)."""
     return asyncio.run(get_client().retrieveProjectById(accession))
+
+def get_project_download_links(accession: str) -> PRIDEProjectDownloadLinks:
+    return asyncio.run(get_client().downloadProject(accession=accession))

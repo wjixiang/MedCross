@@ -19,6 +19,7 @@ members = [
     "opengwas-cli",
     "pride-cli",
     "pride-client",
+    "protrs",
     "pymr",
     "radiomics",
     "rediomics",
@@ -1573,15 +1574,23 @@ name = "pride-cli"
 version = "0.1.0"
 source = { virtual = "apps/pride-cli" }
 dependencies = [
+    { name = "httpx" },
     { name = "pride-client" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
     { name = "rich" },
+    { name = "socksio" },
     { name = "typer" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "pride-client", editable = "libs/pride-client" },
+    { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "rich", specifier = ">=13.0.0" },
+    { name = "socksio", specifier = ">=1.0.0" },
     { name = "typer", specifier = ">=0.24.1" },
 ]
 
@@ -1611,6 +1620,17 @@ sdist = { url = "https://files.pythonhosted.org/packages/a1/96/06e01a7b38dce6fe1
 wheels = [
     { url = "https://files.pythonhosted.org/packages/84/03/0d3ce49e2505ae70cf43bc5bb3033955d2fc9f932163e84dc0779cc47f48/prompt_toolkit-3.0.52-py3-none-any.whl", hash = "sha256:9aac639a3bbd33284347de5ad8d68ecc044b91a762dc39b7c21095fcd6a19955", size = 391431, upload-time = "2025-08-27T15:23:59.498Z" },
 ]
+
+[[package]]
+name = "protrs"
+version = "0.1.0"
+source = { virtual = "apps/ProtRS" }
+dependencies = [
+    { name = "scikit-learn" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "scikit-learn", specifier = ">=1.8.0" }]
 
 [[package]]
 name = "psutil"

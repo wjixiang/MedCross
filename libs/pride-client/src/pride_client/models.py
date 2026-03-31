@@ -125,3 +125,7 @@ class PRIDESearchQuery(BaseModel):
     dateGap: str = Field(default='dateGap')
     sortDirection: Literal['DESC', 'ASC'] = Field(default='DESC')
     sortFields: Literal['submissionDate'] = Field(default='submissionDate')
+
+class PRIDEProjectDownloadLinks(BaseModel):
+    ftp: str
+    globus: str

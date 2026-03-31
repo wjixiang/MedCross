@@ -1,7 +1,7 @@
 from typing import List, Optional
 import httpx
 from pydantic import BaseModel, Field, ValidationError
-from .models import PRIDE_Project, PRIDE_Project_Summary, PRIDESearchQuery
+from .models import PRIDE_Project, PRIDE_Project_Summary, PRIDEProjectDownloadLinks, PRIDESearchQuery
 
 
 class PRIDE_API_Client_Config(BaseModel):
@@ -85,3 +85,17 @@ class API_Client:
             return [PRIDE_Project_Summary.model_validate(item) for item in data], total
         except Exception as e:
             raise e
+    
+    async def downloadProject(self, accession: str) -> PRIDEProjectDownloadLinks: 
+        requestUrl = f"{self.config.baseUrl}/projects/files-path/{accession}"
+
+        async with httpx.AsyncClient(timeout=self.config.timeout) as client:
+            response = await client.get(requestUrl)
+            response.raise_for_status()
+            data = response.json()
+        
+        try:
+            return PRIDEProjectDownloadLinks.model_validate(data)
+        except Exception as e:
+            raise e
+

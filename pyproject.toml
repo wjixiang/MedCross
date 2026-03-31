@@ -14,3 +14,4 @@ members = ["libs/*", "apps/*"]
 [tool.uv.sources]
 "gwas-client" = { workspace = true}
 "pymr" = { workspace = true}
+"pride-client" = { workspace = true}

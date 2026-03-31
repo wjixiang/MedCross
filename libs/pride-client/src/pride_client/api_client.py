@@ -61,14 +61,14 @@ class API_Client:
                 data
             ) from e
         
-    async def searchProjects(self, query: PRIDESearchQuery) -> List[PRIDE_Project_Summary]:
+    async def searchProjects(self, query: PRIDESearchQuery) -> tuple[List[PRIDE_Project_Summary], int]:
         """Search PRIDE projects by keyword with filtering and pagination.
 
         Args:
             query: Search query parameters including keyword, filter, page size, etc.
 
         Returns:
-            List of PRIDE_Project_Summary matching the search criteria
+            Tuple of (list of PRIDE_Project_Summary, total record count)
 
         Raises:
             httpx.HTTPError: If the HTTP request fails
@@ -78,9 +78,10 @@ class API_Client:
         async with httpx.AsyncClient(timeout=self.config.timeout) as client:
             response = await client.get(requestUrl, params=query.model_dump())
             response.raise_for_status()
+            total = int(response.headers.get("total_records", 0))
             data = response.json()
 
         try:
-            return [PRIDE_Project_Summary.model_validate(item) for item in data]
+            return [PRIDE_Project_Summary.model_validate(item) for item in data], total
         except Exception as e:
             raise e

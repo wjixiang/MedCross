@@ -31,21 +31,36 @@ def download_file(
     mode = "wb"
     if resume and local_path.exists():
         local_size = local_path.stat().st_size
+        if remote_size and local_size >= remote_size:
+            progress.update(task_id, total=remote_size, completed=remote_size)
+            return
         if 0 < local_size < remote_size:
             mode = "ab"
             rest_offset = local_size
             progress.update(task_id, completed=local_size)
 
-    with open(local_path, mode) as f:
-        ftp.retrbinary(
-            f"RETR {remote_path}",
-            callback=lambda data: (
-                f.write(data),
-                progress.update(task_id, advance=len(data)),
-            ),
-            blocksize=8192,
-            rest=rest_offset,
-        )
+    ftp.voidcmd("TYPE I")
+    conn = ftp.transfercmd(f"RETR {remote_path}", rest=rest_offset)
+    try:
+        with open(local_path, mode) as f:
+            while True:
+                data = conn.recv(8192)
+                if not data:
+                    break
+                f.write(data)
+                progress.update(task_id, advance=len(data))
+    finally:
+        conn.close()
+    old_timeout = ftp.sock.gettimeout() if ftp.sock else None
+    if ftp.sock:
+        ftp.sock.settimeout(None)
+    try:
+        ftp.voidresp()
+    except (ftplib.error_temp, TimeoutError, OSError):
+        pass
+    finally:
+        if ftp.sock and old_timeout is not None:
+            ftp.sock.settimeout(old_timeout)
 
 
 def download_dir(

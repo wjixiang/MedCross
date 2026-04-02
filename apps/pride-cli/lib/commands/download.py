@@ -91,7 +91,7 @@ def project(
     )
 
     try:
-        ftp = ftplib.FTP(host, timeout=30)
+        ftp = ftplib.FTP(host, timeout=300)
         ftp.login()  # anonymous login
         ftp.cwd(remote_dir)
 

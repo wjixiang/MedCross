@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ukb_mcp.infra import IDXClient
+from infra import IDXClient
 
 
 class ExportService:

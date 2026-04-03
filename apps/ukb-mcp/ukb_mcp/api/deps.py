@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from ukb_mcp.infra import DXClient
+from infra import DXClient
 
 
 def get_dx_client(request: Request) -> DXClient:

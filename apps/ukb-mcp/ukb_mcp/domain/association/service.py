@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ukb_mcp.infra import IDXClient
+from infra import IDXClient
 
 
 class AssociationService:

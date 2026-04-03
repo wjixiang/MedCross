@@ -5,7 +5,7 @@
 
 Usage::
 
-    from ukb_mcp.infra import DXClient
+    from infra import DXClient
 
     with DXClient() as client:
         projects = client.list_projects(name_pattern="ukb*")

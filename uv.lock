@@ -3297,6 +3297,7 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "mcp", extra = ["cli"] },
     { name = "pydantic-settings" },
+    { name = "pytest" },
 ]
 
 [package.metadata]
@@ -3305,6 +3306,7 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.135.3" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.27.0" },
     { name = "pydantic-settings", specifier = ">=2.7.0" },
+    { name = "pytest", specifier = ">=9.0.2" },
 ]
 
 [[package]]

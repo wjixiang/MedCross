@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ukb_mcp.api.deps import get_dx_client
-from ukb_mcp.domain.biomarker.models import BiomarkerQuery, BiomarkerStats
-from ukb_mcp.domain.biomarker.service import BiomarkerService
-from ukb_mcp.infra import IDXClient
+from api.deps import get_dx_client
+from domain.biomarker.models import BiomarkerQuery, BiomarkerStats
+from domain.biomarker.service import BiomarkerService
+from infra import IDXClient
 
 router = APIRouter(prefix="/biomarkers", tags=["biomarkers"])
 

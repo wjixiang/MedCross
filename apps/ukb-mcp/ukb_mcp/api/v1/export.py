@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ukb_mcp.api.deps import get_dx_client
-from ukb_mcp.domain.export.models import ExportRequest
-from ukb_mcp.domain.export.service import ExportService
-from ukb_mcp.infra import IDXClient
+from api.deps import get_dx_client
+from domain.export.models import ExportRequest
+from domain.export.service import ExportService
+from infra import IDXClient
 
 router = APIRouter(prefix="/export", tags=["export"])
 

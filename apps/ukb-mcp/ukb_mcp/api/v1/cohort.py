@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ukb_mcp.api.deps import get_dx_client
-from ukb_mcp.domain.cohort.models import CohortFilter, CohortInfo
-from ukb_mcp.domain.cohort.service import CohortService
-from ukb_mcp.infra import IDXClient
+from api.deps import get_dx_client
+from domain.cohort.models import CohortFilter, CohortInfo
+from domain.cohort.service import CohortService
+from infra import IDXClient
 
 router = APIRouter(prefix="/cohort", tags=["cohort"])
 

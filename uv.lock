@@ -16,6 +16,7 @@ members = [
     "math",
     "medcross",
     "ml",
+    "mono-cell",
     "opengwas-cli",
     "pride-cli",
     "pride-client",
@@ -1094,6 +1095,11 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "scikit-learn", specifier = ">=1.8.0" }]
+
+[[package]]
+name = "mono-cell"
+version = "0.1.0"
+source = { editable = "libs/mono-cell" }
 
 [[package]]
 name = "mpmath"

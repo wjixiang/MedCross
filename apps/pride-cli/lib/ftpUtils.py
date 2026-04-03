@@ -41,10 +41,14 @@ def download_file(
 
     ftp.voidcmd("TYPE I")
     conn = ftp.transfercmd(f"RETR {remote_path}", rest=rest_offset)
+    conn.settimeout(30)
     try:
         with open(local_path, mode) as f:
             while True:
-                data = conn.recv(8192)
+                try:
+                    data = conn.recv(8192)
+                except (TimeoutError, OSError):
+                    break
                 if not data:
                     break
                 f.write(data)

@@ -148,3 +148,24 @@ class DXDataObject(BaseModel):
     size: int = 0
     description: str = ""
     properties: dict[str, Any] = Field(default_factory=dict)
+
+
+class DXDatabaseClusterInfo(BaseModel):
+    """DNAnexus database 对象完整描述（来自 database_describe API）。"""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str = ""
+    project: str = ""
+    name: str = ""
+    class_name: str = Field(default="", alias="class")
+    state: str = ""
+    created: int = 0
+    modified: int = 0
+    folder: str = ""
+    description: str = ""
+    database_name: str = Field(default="", alias="databaseName")
+    unique_database_name: str = Field(default="", alias="uniqueDatabaseName")
+    visibility: str = "visible"
+    sponsored: bool = False
+    hidden: bool = False

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -15,6 +16,18 @@ class CacheStatus(str, Enum):
     HIT = "hit"
     MISS = "miss"
     SKIP = "skip"
+
+
+if TYPE_CHECKING:
+    from .dx_models import (
+        DXDataObject,
+        DXDatabaseClusterInfo,
+        DXDatabaseInfo,
+        DXDatabaseTable,
+        DXFileInfo,
+        DXProject,
+        DXRecordInfo,
+    )
 
 
 class IDXClient(ABC):
@@ -45,13 +58,13 @@ class IDXClient(ABC):
     @abstractmethod
     def list_projects(
         self, name_pattern: str | None = None, *, refresh: bool = False,
-    ) -> list[Any]:
+    ) -> list[DXProject]:
         """列出有权限访问的项目。"""
 
     @abstractmethod
     def get_project(
         self, project_id: str, *, refresh: bool = False,
-    ) -> Any:
+    ) -> DXProject:
         """获取项目详情。"""
 
     @abstractmethod
@@ -69,17 +82,17 @@ class IDXClient(ABC):
         limit: int = 100,
         *,
         refresh: bool = False,
-    ) -> list[Any]:
+    ) -> list[DXFileInfo]:
         """列出当前项目中的文件。"""
 
     @abstractmethod
     def describe_file(
         self, file_id: str, *, refresh: bool = False,
-    ) -> Any:
+    ) -> DXFileInfo:
         """获取文件元数据。"""
 
     @abstractmethod
-    def download_file(self, file_id: str, local_path: str | None = None) -> Any:
+    def download_file(self, file_id: str, local_path: str | None = None) -> Path:
         """下载文件到本地路径。"""
 
     # ── 记录操作 ──────────────────────────────────────────────────────────
@@ -92,13 +105,13 @@ class IDXClient(ABC):
         limit: int = 100,
         *,
         refresh: bool = False,
-    ) -> list[Any]:
+    ) -> list[DXRecordInfo]:
         """列出当前项目中的记录。"""
 
     @abstractmethod
     def get_record(
         self, record_id: str, *, refresh: bool = False,
-    ) -> Any:
+    ) -> DXRecordInfo:
         """获取记录详情（含 details 内容）。"""
 
     # ── 通用搜索 ──────────────────────────────────────────────────────────
@@ -112,7 +125,7 @@ class IDXClient(ABC):
         limit: int = 100,
         *,
         refresh: bool = False,
-    ) -> list[Any]:
+    ) -> list[DXDataObject]:
         """在当前项目中搜索数据对象。"""
 
     # ── 数据库操作 ──────────────────────────────────────────────────────────
@@ -124,19 +137,19 @@ class IDXClient(ABC):
         limit: int = 100,
         *,
         refresh: bool = False,
-    ) -> list[Any]:
+    ) -> list[DXDatabaseInfo]:
         """列出当前项目中的 database 数据对象。"""
 
     @abstractmethod
     def get_database(
         self, database_id: str, *, refresh: bool = False,
-    ) -> Any:
+    ) -> DXDatabaseInfo:
         """获取 database 数据对象详情。"""
 
     @abstractmethod
     def find_database(
         self, name_pattern: str | None = None, *, refresh: bool = False,
-    ) -> Any:
+    ) -> DXDatabaseInfo:
         """在当前项目中查找 database 数据对象。
 
         Args:
@@ -153,7 +166,7 @@ class IDXClient(ABC):
     @abstractmethod
     def describe_database_cluster(
         self, db_cluster_id: str, *, refresh: bool = False,
-    ) -> Any:
+    ) -> DXDatabaseClusterInfo:
         """获取数据库集群描述信息。
 
         Args:
@@ -161,7 +174,7 @@ class IDXClient(ABC):
             refresh: 为 True 时跳过缓存，强制从云端获取。
 
         Returns:
-            包含集群详情的字典，其中 ``"database"`` 键为关联的 database ID。
+            DXDatabaseClusterInfo 实例。
         """
 
     @abstractmethod
@@ -171,7 +184,7 @@ class IDXClient(ABC):
         table_name: str | None = None,
         *,
         refresh: bool = False,
-    ) -> list[Any]:
+    ) -> list[DXDatabaseTable]:
         """查看数据库中可用的数据表。
 
         Args:
@@ -191,7 +204,7 @@ class IDXClient(ABC):
         dataset_ref: str | None = None,
         *,
         refresh: bool = False,
-    ) -> Any:
+    ) -> pd.DataFrame:
         """从数据库关联的数据集中提取指定字段并返回 DataFrame。
 
         Args:
@@ -213,7 +226,7 @@ class IDXClient(ABC):
         dataset_ref: str | None = None,
         *,
         refresh: bool = False,
-    ) -> Any:
+    ) -> Path:
         """从数据库关联的数据集中提取指定字段并下载为 CSV 文件。
 
         Args:
@@ -265,7 +278,7 @@ class IDXClient(ABC):
         dataset_ref: str | None = None,
         *,
         refresh: bool = False,
-    ) -> Any:
+    ) -> pd.DataFrame:
         """列出数据集中的可用字段（精简视图）。
 
         Args:

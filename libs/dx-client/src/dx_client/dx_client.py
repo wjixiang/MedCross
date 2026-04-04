@@ -43,6 +43,7 @@ from .dx_exceptions import (
 )
 from .dx_models import (
     DXClientConfig,
+    DXDatabaseClusterInfo,
     DXDatabaseColumn,
     DXDatabaseInfo,
     DXDatabaseTable,
@@ -520,12 +521,11 @@ class DXClient(IDXClient):
 
     def describe_database_cluster(
         self, db_cluster_id: str, *, refresh: bool = False,
-    ) -> dict[str, Any]:
+    ) -> DXDatabaseClusterInfo:
         """获取数据库集群描述信息。
 
         Returns:
-            包含 ``"database"`` (关联的 database ID)、``"name"``、
-            ``"host"`` 等键的字典。
+            DXDatabaseClusterInfo 实例。
         """
         self._ensure_connected()
         cache_key = f"db_cluster:{db_cluster_id}"
@@ -536,7 +536,8 @@ class DXClient(IDXClient):
             if cached is not None:
                 return cached
         try:
-            result = dxpy.api.database_describe(db_cluster_id)
+            raw = dxpy.api.database_describe(db_cluster_id)
+            result = DXDatabaseClusterInfo.model_validate(raw)
             self._cache.set(cache_key, result)
             return result
         except DxPyDXError as e:

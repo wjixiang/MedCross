@@ -13,6 +13,7 @@ from .dx_exceptions import (
 )
 from .dx_models import (
     DXClientConfig,
+    DXDatabaseClusterInfo,
     DXDatabaseColumn,
     DXDatabaseInfo,
     DXDatabaseTable,
@@ -28,6 +29,7 @@ __all__ = [
     "ICache",
     "MemoryCache",
     "DXClientConfig",
+    "DXDatabaseClusterInfo",
     "DXDatabaseColumn",
     "DXDatabaseInfo",
     "DXDatabaseTable",

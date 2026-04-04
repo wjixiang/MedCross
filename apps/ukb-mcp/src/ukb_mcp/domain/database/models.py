@@ -6,28 +6,29 @@ from pydantic import BaseModel, Field
 
 
 class DatabaseInfo(BaseModel):
-    """数据库基本信息。"""
+    """DNAnexus database 基本信息。"""
 
-    id: str
-    name: str = ""
-    state: str = ""
-    project: str = ""
-    created: int = 0
-    modified: int = 0
+    id: str = Field(description="database 对象 ID，如 database-xxxx。")
+    name: str = Field(default="", description="名称。")
+    state: str = Field(default="", description="状态，如 open / closed。")
+    project: str = Field(default="", description="所属项目 ID。")
+    created: int = Field(default=0, description="创建时间戳 (Unix epoch)。")
+    modified: int = Field(default=0, description="修改时间戳 (Unix epoch)。")
 
 
 class DatabaseTableInfo(BaseModel):
     """数据库中的数据表。"""
 
-    name: str
+    name: str = Field(description="表名。")
 
 
-class DatabaseFieldListRequest(BaseModel):
-    """字段列表查询请求。"""
+class DatabaseFieldInfo(BaseModel):
+    """数据集中的可用字段（精简视图）。"""
 
-    entity: str | None = Field(default=None, description="按实体过滤，如 participant。")
-    name_pattern: str | None = Field(default=None, description="按字段名模糊匹配。")
-    refresh: bool = Field(default=False, description="为 True 时跳过缓存，强制从云端获取。")
+    entity: str = Field(description="实体名，如 participant。")
+    name: str = Field(description="字段名，如 p31。")
+    type: str = Field(description="字段类型，如 Integer / Continuous。")
+    title: str = Field(default="", description="字段标题。")
 
 
 class DatabaseQueryRequest(BaseModel):
@@ -35,18 +36,10 @@ class DatabaseQueryRequest(BaseModel):
 
     entity_fields: list[str] = Field(
         default_factory=list,
-        description='"entity.field_name" 格式的字段列表。',
+        description='"entity.field_name" 格式的字段列表，如 ["participant.eid", "participant.p31"]。',
     )
-    dataset_ref: str | None = Field(default=None, description="数据集引用，为空则自动查找。")
-    refresh: bool = Field(default=False, description="为 True 时跳过缓存，强制从云端获取。")
-
-
-class DatabaseExportRequest(BaseModel):
-    """数据库导出请求。"""
-
-    entity_fields: list[str] = Field(
-        default_factory=list,
-        description='"entity.field_name" 格式的字段列表。',
+    dataset_ref: str | None = Field(
+        default=None,
+        description="数据集引用 (project-xxx:record-yyy)，为空则自动查找。",
     )
-    dataset_ref: str | None = Field(default=None, description="数据集引用，为空则自动查找。")
-    refresh: bool = Field(default=False, description="为 True 时跳过缓存，强制从云端获取。")
+    refresh: bool = Field(default=False, description="强制刷新缓存。")

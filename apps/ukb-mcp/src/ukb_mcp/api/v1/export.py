@@ -24,7 +24,10 @@ def export_csv(
     request: ExportRequest,
     service: ExportService = Depends(get_export_service),
 ) -> StreamingResponse:
-    """导出数据为 CSV 文件。"""
+    """导出数据为 CSV 文件。
+
+    根据请求中的字段 ID 列表提取数据，返回 CSV 流。
+    """
     df = service.query(request.fields, request.cohort_id, refresh=request.refresh)
     buf = io.StringIO()
     df.to_csv(buf, index=False)
@@ -41,7 +44,10 @@ def export_parquet(
     request: ExportRequest,
     service: ExportService = Depends(get_export_service),
 ) -> StreamingResponse:
-    """导出数据为 Parquet 文件。"""
+    """导出数据为 Parquet 文件。
+
+    根据请求中的字段 ID 列表提取数据，返回 Parquet 二进制流。
+    """
     df = service.query(request.fields, request.cohort_id, refresh=request.refresh)
     buf = io.BytesIO()
     df.to_parquet(buf, index=False)

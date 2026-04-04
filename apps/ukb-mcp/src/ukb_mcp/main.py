@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from ukb_mcp.api.v1.router import v1_router
 from ukb_mcp.config import Settings, get_settings
@@ -13,6 +14,19 @@ from dx_client import DXClient, DXClientConfig, DXConfigError, IDXClient
 from dx_client.cache import DuckDBCache
 
 logger = logging.getLogger(__name__)
+
+
+class CacheStatusMiddleware(BaseHTTPMiddleware):
+    """在每个 API 响应中注入 X-Cache-Status 头。"""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        dx_client: IDXClient | None = getattr(
+            request.app.state, "dx_client", None,
+        )
+        if dx_client is not None:
+            response.headers["X-Cache-Status"] = dx_client.cache_status.value
+        return response
 
 
 @asynccontextmanager
@@ -60,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.add_middleware(CacheStatusMiddleware)
     app.include_router(v1_router)
 
     @app.get("/health")

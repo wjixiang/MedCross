@@ -1,9 +1,9 @@
 """缓存模块 — 提供可插拔的缓存策略。"""
 
-from .base import ICache
+from .base import CacheStatus, ICache
 from .memory import MemoryCache
 
-__all__ = ["ICache", "MemoryCache", "DuckDBCache"]
+__all__ = ["CacheStatus", "ICache", "MemoryCache", "DuckDBCache"]
 
 
 def __getattr__(name: str):

@@ -32,7 +32,7 @@ from dxpy import DXRecord
 from dxpy.exceptions import DXAPIError as DxPyDXAPIError
 from dxpy.exceptions import DXError as DxPyDXError
 
-from .cache import ICache
+from .cache import CacheStatus, ICache
 from .dx_exceptions import (
     DXAPIError,
     DXAuthError,
@@ -100,6 +100,11 @@ class DXClient(IDXClient):
     @property
     def current_project_id(self) -> str:
         return self._current_project_id
+
+    @property
+    def cache_status(self) -> CacheStatus:
+        """最近一次数据读取的缓存状态。"""
+        return self._cache.last_status
 
     def connect(self) -> None:
         """初始化 dxpy security context，建立与 DNAnexus 平台的连接。
@@ -190,10 +195,11 @@ class DXClient(IDXClient):
     ) -> list[DXProject]:
         self._ensure_connected()
         cache_key = f"projects:{name_pattern or '*'}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("list_projects: cache hit (pattern=%s)", name_pattern)
                 return cached
         try:
             kwargs: dict[str, Any] = {"describe": True, "limit": 1000}
@@ -212,10 +218,11 @@ class DXClient(IDXClient):
     ) -> DXProject:
         self._ensure_connected()
         cache_key = f"project:{project_id}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("get_project: cache hit (%s)", project_id)
                 return cached
         try:
             result = DXProject.model_validate(dxpy.describe(project_id))
@@ -252,10 +259,11 @@ class DXClient(IDXClient):
         self._ensure_connected()
         project = self._require_project()
         cache_key = f"files:{project}:{folder or '/'}:{name_pattern or ''}:{recurse}:{limit}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("list_files: cache hit (folder=%s)", folder)
                 return cached
         try:
             kwargs: dict[str, Any] = {
@@ -284,10 +292,11 @@ class DXClient(IDXClient):
     ) -> DXFileInfo:
         self._ensure_connected()
         cache_key = f"file:{file_id}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("describe_file: cache hit (%s)", file_id)
                 return cached
         try:
             result = DXFileInfo.model_validate(
@@ -335,10 +344,11 @@ class DXClient(IDXClient):
         self._ensure_connected()
         project = self._require_project()
         cache_key = f"records:{project}:{folder or '/'}:{name_pattern or ''}:{limit}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("list_records: cache hit (folder=%s)", folder)
                 return cached
         try:
             kwargs: dict[str, Any] = {
@@ -366,10 +376,11 @@ class DXClient(IDXClient):
     ) -> DXRecordInfo:
         self._ensure_connected()
         cache_key = f"record:{record_id}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("get_record: cache hit (%s)", record_id)
                 return cached
         try:
             record = DXRecord(record_id, project=self._current_project_id or None)
@@ -402,10 +413,11 @@ class DXClient(IDXClient):
         cache_key = (
             f"find_objects:{project}:{classname}:{name_pattern or ''}:{props_str}:{limit}"
         )
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("find_data_objects: cache hit (class=%s)", classname)
                 return cached
         try:
             kwargs: dict[str, Any] = {
@@ -444,10 +456,11 @@ class DXClient(IDXClient):
         self._ensure_connected()
         project = self._require_project()
         cache_key = f"databases:{project}:{name_pattern or ''}:{limit}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("list_databases: cache hit")
                 return cached
         try:
             kwargs: dict[str, Any] = {
@@ -475,10 +488,11 @@ class DXClient(IDXClient):
         """获取 database 数据对象详情。"""
         self._ensure_connected()
         cache_key = f"database:{database_id}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("get_database: cache hit (%s)", database_id)
                 return cached
         try:
             result = DXDatabaseInfo.model_validate(dxpy.describe(database_id))
@@ -515,10 +529,11 @@ class DXClient(IDXClient):
         """
         self._ensure_connected()
         cache_key = f"db_cluster:{db_cluster_id}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("describe_database_cluster: cache hit (%s)", db_cluster_id)
                 return cached
         try:
             result = dxpy.api.database_describe(db_cluster_id)
@@ -544,10 +559,11 @@ class DXClient(IDXClient):
         结果按 database_id 缓存。
         """
         cache_key = f"db_schema:{database_id}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached_tables = self._cache.get(cache_key)
             if cached_tables is not None:
-                logger.debug("get_database_schema: cache hit (%s)", database_id)
                 if table_name:
                     return [t for t in cached_tables if t.name == table_name]
                 return cached_tables
@@ -614,10 +630,11 @@ class DXClient(IDXClient):
             return pd.DataFrame()
 
         cache_key = f"db_query:{database_id}:{','.join(sorted(entity_fields))}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("query_database: cache hit (%s)", database_id)
                 return cached
 
         if dataset_ref is None:
@@ -681,6 +698,8 @@ class DXClient(IDXClient):
         Raises:
             DXFileNotFoundError: 未找到匹配的 Dataset record。
         """
+        if refresh and self._cached_dataset_ref:
+            self._cache.last_status = CacheStatus.SKIP
         if not refresh and self._cached_dataset_ref:
             dataset_id = self._cached_dataset_ref.split(":")[-1]
             return dataset_id, self._cached_dataset_ref
@@ -714,10 +733,11 @@ class DXClient(IDXClient):
             _, dataset_ref = self.find_dataset()
 
         cache_key = f"data_dictionary:{dataset_ref}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("get_data_dictionary: cache hit (%s)", dataset_ref)
                 return cached
 
         env = self._make_subprocess_env()
@@ -790,10 +810,11 @@ class DXClient(IDXClient):
             return pd.DataFrame()
 
         cache_key = f"extract:{dataset_ref or '_'}:{','.join(sorted(entity_fields))}"
-        if not refresh:
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
             cached = self._cache.get(cache_key)
             if cached is not None:
-                logger.debug("extract_fields: cache hit (%s)", entity_fields)
                 return cached
 
         if dataset_ref is None:

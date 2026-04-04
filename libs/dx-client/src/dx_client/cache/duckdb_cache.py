@@ -30,6 +30,7 @@ class DuckDBCache(ICache):
     """
 
     def __init__(self, db_path: str | Path = ".cache/dx_cache.duckdb") -> None:
+        super().__init__()
         self._db_path = str(db_path)
         self._hits: int = 0
         self._misses: int = 0
@@ -45,6 +46,7 @@ class DuckDBCache(ICache):
                 "Install it with: pip install duckdb"
             )
 
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = duckdb.connect(self._db_path)
         self._conn.execute(
             """
@@ -57,23 +59,18 @@ class DuckDBCache(ICache):
         )
         self._initialized = True
 
-    def get(self, key: str) -> Any | None:
+    def _inner_get(self, key: str) -> Any | None:
         if not self._initialized:
             return None
         try:
-            import duckdb
-
             row = self._conn.execute(
                 "SELECT value FROM cache_store WHERE key = ?", [key]
             ).fetchone()
             if row is not None:
-                self._hits += 1
                 return pickle.loads(row[0])
-            self._misses += 1
             return None
         except Exception:
             logger.warning("DuckDBCache.get failed for key=%s", key, exc_info=True)
-            self._misses += 1
             return None
 
     def set(self, key: str, value: Any) -> None:

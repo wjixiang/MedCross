@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any
 
 import pandas as pd
+
+
+class CacheStatus(str, Enum):
+    """缓存操作结果。"""
+
+    HIT = "hit"
+    MISS = "miss"
+    SKIP = "skip"
 
 
 class IDXClient(ABC):
@@ -20,6 +29,11 @@ class IDXClient(ABC):
     @abstractmethod
     def current_project_id(self) -> str:
         """当前项目上下文 ID。"""
+
+    @property
+    @abstractmethod
+    def cache_status(self) -> CacheStatus:
+        """最近一次数据读取的缓存状态。"""
 
     @property
     @abstractmethod

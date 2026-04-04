@@ -1,5 +1,6 @@
 from .dx_client import DXClient, default_dx_client_config
 from .interfaces import IDXClient
+from .interfaces import CacheStatus as CacheStatus
 from .cache import ICache, MemoryCache
 from .dx_exceptions import (
     DXAPIError,

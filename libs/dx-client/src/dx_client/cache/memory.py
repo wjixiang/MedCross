@@ -14,17 +14,13 @@ class MemoryCache(ICache):
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self._store: dict[str, Any] = {}
         self._hits: int = 0
         self._misses: int = 0
 
-    def get(self, key: str) -> Any | None:
-        value = self._store.get(key)
-        if value is not None:
-            self._hits += 1
-        else:
-            self._misses += 1
-        return value
+    def _inner_get(self, key: str) -> Any | None:
+        return self._store.get(key)
 
     def set(self, key: str, value: Any) -> None:
         self._store[key] = value

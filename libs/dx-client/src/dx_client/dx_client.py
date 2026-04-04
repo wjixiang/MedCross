@@ -1,0 +1,843 @@
+"""DNAnexus 平台数据访问客户端。
+
+封装 dxpy SDK，提供类型安全的统一数据访问接口。
+通过 ``ICache`` 依赖注入实现可插拔的缓存策略。
+
+所有数据读取方法默认命中缓存，传入 ``refresh=True`` 可强制从云端刷新。
+
+Usage::
+
+    from dx_client import DXClient, MemoryCache
+
+    with DXClient(cache=MemoryCache()) as client:
+        projects = client.list_projects(name_pattern="ukb*")
+        client.set_project(projects[0].id)
+        files = client.list_files(folder="/biomarkers")
+"""
+
+from __future__ import annotations
+
+import glob
+import json
+import logging
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Any
+
+import dxpy
+import pandas as pd
+from dxpy import DXRecord
+from dxpy.exceptions import DXAPIError as DxPyDXAPIError
+from dxpy.exceptions import DXError as DxPyDXError
+
+from .cache import ICache
+from .dx_exceptions import (
+    DXAPIError,
+    DXAuthError,
+    DXClientError,
+    DXConfigError,
+    DXDatabaseNotFoundError,
+    DXFileNotFoundError,
+)
+from .dx_models import (
+    DXClientConfig,
+    DXDatabaseColumn,
+    DXDatabaseInfo,
+    DXDatabaseTable,
+    DXDataObject,
+    DXFileInfo,
+    DXProject,
+    DXRecordInfo,
+)
+from .interfaces import IDXClient
+
+logger = logging.getLogger(__name__)
+
+
+def _load_default_config() -> DXClientConfig:
+    """从环境变量加载默认配置。"""
+    return DXClientConfig(
+        auth_token=os.getenv("DX_AUTH_TOKEN", ""),
+        project_context_id=os.getenv("DX_PROJECT_CONTEXT_ID", ""),
+    )
+
+
+default_dx_client_config = _load_default_config()
+
+
+class DXClient(IDXClient):
+    """DNAnexus 平台数据访问客户端。Use dxpy python SDK.
+
+    Args:
+        config: 客户端配置。为 None 时使用模块级默认配置（环境变量）。
+        cache: 缓存实例。为 None 时使用 MemoryCache。
+
+    生命周期::
+
+        client = DXClient(config)
+        client.connect()                    # 启动时调用，初始化 dxpy 连接
+        projects = client.list_projects()   # 正常使用
+        client.disconnect()                 # 关闭时调用，清理状态
+    """
+
+    def __init__(
+        self,
+        config: DXClientConfig | None = None,
+        cache: ICache | None = None,
+    ) -> None:
+        self._config = config or default_dx_client_config
+        self._cache: ICache = cache or MemoryCache()
+        self._current_project_id: str = ""
+        self._initialized = False
+        self._cached_dataset_ref: str | None = None
+
+    @property
+    def is_connected(self) -> bool:
+        return self._initialized
+
+    @property
+    def current_project_id(self) -> str:
+        return self._current_project_id
+
+    def connect(self) -> None:
+        """初始化 dxpy security context，建立与 DNAnexus 平台的连接。
+
+        应在应用启动时调用。重复调用为空操作。
+        """
+        if self._initialized:
+            return
+
+        if not self._config.auth_token:
+            raise DXConfigError(
+                "DNAnexus auth token is required. "
+                "Set DX_AUTH_TOKEN environment variable or pass config.auth_token."
+            )
+
+        dxpy.set_security_context(
+            {"auth_token_type": "Bearer", "auth_token": self._config.auth_token}
+        )
+
+        dxpy.set_api_server_info(
+            host=self._config.api_server_host,
+            port=self._config.api_server_port,
+            protocol=self._config.api_server_protocol,
+        )
+
+        if self._config.project_context_id:
+            dxpy.set_project_context(self._config.project_context_id)
+            dxpy.set_workspace_id(self._config.project_context_id)
+            self._current_project_id = self._config.project_context_id
+
+        self._initialized = True
+        logger.info(
+            "Connected to DNAnexus at %s://%s:%d",
+            self._config.api_server_protocol,
+            self._config.api_server_host,
+            self._config.api_server_port,
+        )
+
+    def disconnect(self) -> None:
+        """断开与 DNAnexus 平台的连接，清理全局状态。"""
+        if not self._initialized:
+            return
+        self._initialized = False
+        self._current_project_id = ""
+        logger.info("Disconnected from DNAnexus")
+
+    def _ensure_connected(self) -> None:
+        """断言已连接，未连接时抛出异常。"""
+        if not self._initialized:
+            raise DXConfigError(
+                "DXClient is not connected. Call connect() first."
+            )
+
+    @staticmethod
+    def _resolve_name_mode(pattern: str) -> str:
+        """根据模式内容自动选择 name_mode。"""
+        if "*" in pattern or "?" in pattern:
+            return "glob"
+        return "regexp"
+
+    def _handle_dx_error(self, e: DxPyDXError, context: str) -> None:
+        """将 dxpy 异常转换为 DXClientError 层级。"""
+        if isinstance(e, DxPyDXAPIError):
+            status_code = getattr(e, "status", 0)
+            error_name = getattr(e, "name", "")
+            msg = f"{context}: {e}"
+            if status_code == 401 or "auth" in error_name.lower():
+                raise DXAuthError(msg, dx_error=e) from e
+            if status_code == 404 or "not found" in str(e).lower():
+                raise DXFileNotFoundError(msg, dx_error=e) from e
+            raise DXAPIError(
+                msg, status_code=status_code, error_type=error_name, dx_error=e
+            ) from e
+        raise DXClientError(f"{context}: {e}", dx_error=e) from e
+
+    def _require_project(self) -> str:
+        """断言已设置项目上下文，返回 project_id。"""
+        if not self._current_project_id:
+            raise DXConfigError("No project context set. Call set_project() first.")
+        return self._current_project_id
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  项目操作
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def list_projects(
+        self, name_pattern: str | None = None, *, refresh: bool = False,
+    ) -> list[DXProject]:
+        self._ensure_connected()
+        cache_key = f"projects:{name_pattern or '*'}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("list_projects: cache hit (pattern=%s)", name_pattern)
+                return cached
+        try:
+            kwargs: dict[str, Any] = {"describe": True, "limit": 1000}
+            if name_pattern:
+                kwargs["name"] = name_pattern
+                kwargs["name_mode"] = self._resolve_name_mode(name_pattern)
+            result = [DXProject.model_validate(r) for r in dxpy.find_projects(**kwargs)]
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, "Failed to list projects")
+            raise  # unreachable
+
+    def get_project(
+        self, project_id: str, *, refresh: bool = False,
+    ) -> DXProject:
+        self._ensure_connected()
+        cache_key = f"project:{project_id}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("get_project: cache hit (%s)", project_id)
+                return cached
+        try:
+            result = DXProject.model_validate(dxpy.describe(project_id))
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to get project '{project_id}'")
+            raise
+
+    def set_project(self, project_id: str) -> None:
+        self._ensure_connected()
+        try:
+            dxpy.set_project_context(project_id)
+            dxpy.set_workspace_id(project_id)
+            self._current_project_id = project_id
+            logger.info("Switched project context to: %s", project_id)
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to set project '{project_id}'")
+            raise
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  文件操作
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def list_files(
+        self,
+        folder: str | None = None,
+        name_pattern: str | None = None,
+        recurse: bool = False,
+        limit: int = 100,
+        *,
+        refresh: bool = False,
+    ) -> list[DXFileInfo]:
+        self._ensure_connected()
+        project = self._require_project()
+        cache_key = f"files:{project}:{folder or '/'}:{name_pattern or ''}:{recurse}:{limit}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("list_files: cache hit (folder=%s)", folder)
+                return cached
+        try:
+            kwargs: dict[str, Any] = {
+                "classname": "file",
+                "project": project,
+                "folder": folder or "/",
+                "recurse": recurse,
+                "describe": True,
+                "limit": limit,
+            }
+            if name_pattern:
+                kwargs["name"] = name_pattern
+                kwargs["name_mode"] = self._resolve_name_mode(name_pattern)
+            result = [
+                DXFileInfo.model_validate(r["describe"])
+                for r in dxpy.find_data_objects(**kwargs)
+            ]
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to list files in '{folder or '/'}'")
+            raise
+
+    def describe_file(
+        self, file_id: str, *, refresh: bool = False,
+    ) -> DXFileInfo:
+        self._ensure_connected()
+        cache_key = f"file:{file_id}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("describe_file: cache hit (%s)", file_id)
+                return cached
+        try:
+            result = DXFileInfo.model_validate(
+                dxpy.describe(file_id, project=self._current_project_id or None)
+            )
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to describe file '{file_id}'")
+            raise
+
+    def download_file(self, file_id: str, local_path: str | None = None) -> Path:
+        self._ensure_connected()
+        try:
+            if local_path is None:
+                desc: dict[str, Any] = dxpy.describe(  # type: ignore[assignment]
+                    file_id, project=self._current_project_id or None
+                )
+                local_path = str(desc.get("name", file_id))
+
+            dxpy.download_dxfile(
+                file_id,
+                filename=local_path,
+                project=self._current_project_id or None,
+                chunksize=100 * 1024 * 1024,
+            )
+            logger.info("Downloaded file '%s' to '%s'", file_id, local_path)
+            return Path(local_path)
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to download file '{file_id}'")
+            raise
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  记录操作
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def list_records(
+        self,
+        folder: str | None = None,
+        name_pattern: str | None = None,
+        limit: int = 100,
+        *,
+        refresh: bool = False,
+    ) -> list[DXRecordInfo]:
+        self._ensure_connected()
+        project = self._require_project()
+        cache_key = f"records:{project}:{folder or '/'}:{name_pattern or ''}:{limit}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("list_records: cache hit (folder=%s)", folder)
+                return cached
+        try:
+            kwargs: dict[str, Any] = {
+                "classname": "record",
+                "project": project,
+                "folder": folder or "/",
+                "describe": True,
+                "limit": limit,
+            }
+            if name_pattern:
+                kwargs["name"] = name_pattern
+                kwargs["name_mode"] = self._resolve_name_mode(name_pattern)
+            result = [
+                DXRecordInfo.model_validate(r["describe"])
+                for r in dxpy.find_data_objects(**kwargs)
+            ]
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to list records in '{folder or '/'}'")
+            raise
+
+    def get_record(
+        self, record_id: str, *, refresh: bool = False,
+    ) -> DXRecordInfo:
+        self._ensure_connected()
+        cache_key = f"record:{record_id}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("get_record: cache hit (%s)", record_id)
+                return cached
+        try:
+            record = DXRecord(record_id, project=self._current_project_id or None)
+            desc = record.describe()
+            details = record.get_details()
+            model = DXRecordInfo.model_validate(desc)
+            model.details = details  # type: ignore[attr-defined]
+            self._cache.set(cache_key, model)
+            return model
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to get record '{record_id}'")
+            raise
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  通用搜索
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def find_data_objects(
+        self,
+        classname: str = "file",
+        name_pattern: str | None = None,
+        properties: dict[str, str] | None = None,
+        limit: int = 100,
+        *,
+        refresh: bool = False,
+    ) -> list[DXDataObject]:
+        self._ensure_connected()
+        project = self._require_project()
+        props_str = json.dumps(properties, sort_keys=True) if properties else ""
+        cache_key = (
+            f"find_objects:{project}:{classname}:{name_pattern or ''}:{props_str}:{limit}"
+        )
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("find_data_objects: cache hit (class=%s)", classname)
+                return cached
+        try:
+            kwargs: dict[str, Any] = {
+                "classname": classname,
+                "project": project,
+                "describe": True,
+                "limit": limit,
+            }
+            if name_pattern:
+                kwargs["name"] = name_pattern
+                kwargs["name_mode"] = self._resolve_name_mode(name_pattern)
+            if properties:
+                kwargs["properties"] = properties
+            result = [
+                DXDataObject.model_validate(r["describe"])
+                for r in dxpy.find_data_objects(**kwargs)
+            ]
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to find data objects (class={classname})")
+            raise
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  数据库操作
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def list_databases(
+        self,
+        name_pattern: str | None = None,
+        limit: int = 100,
+        *,
+        refresh: bool = False,
+    ) -> list[DXDatabaseInfo]:
+        """列出当前项目中的 database 数据对象。"""
+        self._ensure_connected()
+        project = self._require_project()
+        cache_key = f"databases:{project}:{name_pattern or ''}:{limit}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("list_databases: cache hit")
+                return cached
+        try:
+            kwargs: dict[str, Any] = {
+                "classname": "database",
+                "project": project,
+                "describe": True,
+                "limit": limit,
+            }
+            if name_pattern:
+                kwargs["name"] = name_pattern
+                kwargs["name_mode"] = self._resolve_name_mode(name_pattern)
+            result = [
+                DXDatabaseInfo.model_validate(r["describe"])
+                for r in dxpy.find_data_objects(**kwargs)
+            ]
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, "Failed to list databases")
+            raise
+
+    def get_database(
+        self, database_id: str, *, refresh: bool = False,
+    ) -> DXDatabaseInfo:
+        """获取 database 数据对象详情。"""
+        self._ensure_connected()
+        cache_key = f"database:{database_id}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("get_database: cache hit (%s)", database_id)
+                return cached
+        try:
+            result = DXDatabaseInfo.model_validate(dxpy.describe(database_id))
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to get database '{database_id}'")
+            raise
+
+    def find_database(
+        self, name_pattern: str | None = None, *, refresh: bool = False,
+    ) -> DXDatabaseInfo:
+        """在当前项目中查找 database 数据对象。
+
+        若 *name_pattern* 为 None，返回项目中第一个 database。
+        """
+        databases = self.list_databases(name_pattern=name_pattern, limit=10, refresh=refresh)
+        if not databases:
+            project_id = self._require_project()
+            detail = f" Matching pattern: '{name_pattern}'" if name_pattern else ""
+            raise DXDatabaseNotFoundError(
+                f"No database found in project '{project_id}'.{detail}"
+            )
+        return databases[0]
+
+    def describe_database_cluster(
+        self, db_cluster_id: str, *, refresh: bool = False,
+    ) -> dict[str, Any]:
+        """获取数据库集群描述信息。
+
+        Returns:
+            包含 ``"database"`` (关联的 database ID)、``"name"``、
+            ``"host"`` 等键的字典。
+        """
+        self._ensure_connected()
+        cache_key = f"db_cluster:{db_cluster_id}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("describe_database_cluster: cache hit (%s)", db_cluster_id)
+                return cached
+        try:
+            result = dxpy.api.database_describe(db_cluster_id)
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(
+                e, f"Failed to describe database cluster '{db_cluster_id}'"
+            )
+            raise
+
+    def get_database_schema(
+        self,
+        database_id: str,
+        table_name: str | None = None,
+        *,
+        refresh: bool = False,
+    ) -> list[DXDatabaseTable]:
+        """查看数据库中可用的数据表。
+
+        UKB-RAP 的 database 为 dnax 类型（Parquet 存储），无 SQL schema。
+        本方法通过 ``database_list_folder`` 浏览顶层目录结构来列出数据表。
+        结果按 database_id 缓存。
+        """
+        cache_key = f"db_schema:{database_id}"
+        if not refresh:
+            cached_tables = self._cache.get(cache_key)
+            if cached_tables is not None:
+                logger.debug("get_database_schema: cache hit (%s)", database_id)
+                if table_name:
+                    return [t for t in cached_tables if t.name == table_name]
+                return cached_tables
+
+        self._ensure_connected()
+        try:
+            resp = dxpy.api.database_list_folder(database_id, {})
+        except DxPyDXError as e:
+            self._handle_dx_error(
+                e, f"Failed to list folder for database '{database_id}'"
+            )
+            raise
+
+        raw_entries: list[dict[str, Any]] = resp.get("results", [])
+        tables: list[DXDatabaseTable] = []
+        for entry in raw_entries:
+            folder_path = entry.get("path", "")
+            # 提取表名：取最后一层目录，去掉前缀和尾斜杠
+            # 格式: "{hash}/database-{id}/{table_name}/"
+            parts = folder_path.rstrip("/").split("/")
+            tbl_name = parts[-1] if parts else folder_path
+
+            if table_name and tbl_name != table_name:
+                continue
+
+            tables.append(DXDatabaseTable(name=tbl_name))
+
+        if table_name and not tables:
+            raise DXDatabaseNotFoundError(
+                f"Table '{table_name}' not found in database '{database_id}'."
+            )
+
+        logger.info(
+            "Database '%s' has %d tables%s",
+            database_id,
+            len(tables),
+            f" (filtered by '{table_name}')" if table_name else "",
+        )
+
+        # 缓存全量表列表（不含 table_name 过滤）
+        self._cache.set(cache_key, tables)
+        return tables
+
+    def query_database(
+        self,
+        database_id: str,
+        entity_fields: list[str],
+        dataset_ref: str | None = None,
+        *,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        """从数据库关联的数据集中提取指定字段并返回 DataFrame。
+
+        UKB-RAP 的 database 为 dnax 类型，数据提取须通过关联的 Dataset record
+        调用 ``dx extract_dataset``。若未提供 *dataset_ref*，自动查找。
+
+        Args:
+            database_id: DNAnexus database ID。
+            entity_fields: ``"entity.field_name"`` 格式的字段列表。
+            dataset_ref: 数据集引用。为 None 时自动查找。
+            refresh: 为 True 时跳过缓存，强制从云端获取。
+        """
+        if not entity_fields:
+            return pd.DataFrame()
+
+        cache_key = f"db_query:{database_id}:{','.join(sorted(entity_fields))}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("query_database: cache hit (%s)", database_id)
+                return cached
+
+        if dataset_ref is None:
+            _, dataset_ref = self.find_dataset()
+
+        logger.info(
+            "Extracting %d fields from database '%s' via dataset '%s'",
+            len(entity_fields), database_id, dataset_ref,
+        )
+        result = self.extract_fields(entity_fields, dataset_ref=dataset_ref, refresh=refresh)
+        self._cache.set(cache_key, result)
+        return result
+
+    def download_database_query(
+        self,
+        database_id: str,
+        output_path: str,
+        entity_fields: list[str],
+        dataset_ref: str | None = None,
+        *,
+        refresh: bool = False,
+    ) -> Path:
+        """从数据库关联的数据集中提取指定字段并下载为 CSV 文件。
+
+        Args:
+            database_id: DNAnexus database ID。
+            output_path: 本地 CSV 文件保存路径。
+            entity_fields: ``"entity.field_name"`` 格式的字段列表。
+            dataset_ref: 数据集引用。为 None 时自动查找。
+            refresh: 为 True 时跳过缓存，强制从云端获取。
+        """
+        df = self.query_database(database_id, entity_fields, dataset_ref, refresh=refresh)
+
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(path, index=False)
+
+        logger.info(
+            "Downloaded %d rows (%d fields) from database '%s' to '%s'",
+            len(df), len(entity_fields), database_id, path,
+        )
+        return path
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  数据集操作 (UKB-RAP)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def find_dataset(
+        self, name_pattern: str = "app*.dataset", *, refresh: bool = False,
+    ) -> tuple[str, str]:
+        """在当前项目中查找 UKB Dataset record。
+
+        结果会被缓存，后续调用直接返回缓存值。
+
+        Args:
+            name_pattern: 数据集名称匹配模式。
+            refresh: 为 True 时跳过缓存，强制从云端获取。
+
+        Returns:
+            (dataset_id, dataset_ref) 元组。
+        Raises:
+            DXFileNotFoundError: 未找到匹配的 Dataset record。
+        """
+        if not refresh and self._cached_dataset_ref:
+            dataset_id = self._cached_dataset_ref.split(":")[-1]
+            return dataset_id, self._cached_dataset_ref
+
+        self._ensure_connected()
+        project_id = self._require_project()
+        datasets = self.find_data_objects(
+            classname="record", name_pattern=name_pattern, limit=10,
+        )
+        for obj in datasets:
+            rec = self.get_record(obj.id)
+            types = rec.types or []
+            if "Dataset" in types:
+                self._cached_dataset_ref = f"{project_id}:{obj.id}"
+                return obj.id, self._cached_dataset_ref
+
+        raise DXFileNotFoundError(
+            f"No Dataset record matching '{name_pattern}' found in project "
+            f"'{project_id}'. Make sure the UK Biobank dataset has been "
+            f"dispensed to this project."
+        )
+
+    def get_data_dictionary(
+        self, dataset_ref: str | None = None, *, refresh: bool = False,
+    ) -> pd.DataFrame:
+        """通过 ``dx extract_dataset -ddd`` 提取数据字典。
+
+        结果按 dataset_ref 缓存，同一数据集重复调用直接返回缓存。
+        """
+        if dataset_ref is None:
+            _, dataset_ref = self.find_dataset()
+
+        cache_key = f"data_dictionary:{dataset_ref}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("get_data_dictionary: cache hit (%s)", dataset_ref)
+                return cached
+
+        env = self._make_subprocess_env()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cmd = [
+                "dx", "extract_dataset", dataset_ref,
+                "-ddd", "--delimiter", ",",
+            ]
+            logger.info("Running: %s", " ".join(cmd))
+            try:
+                result = subprocess.run(
+                    cmd, check=True, capture_output=True, text=True,
+                    cwd=tmpdir, env=env,
+                )
+            except subprocess.CalledProcessError as e:
+                raise DXAPIError(
+                    f"dx extract_dataset -ddd failed: {e.stderr}",
+                    status_code=e.returncode,
+                    dx_error=e,
+                ) from e
+
+            pattern = str(Path(tmpdir) / "*.data_dictionary.csv")
+            matches = glob.glob(pattern)
+            if not matches:
+                raise DXAPIError(
+                    f"dx extract_dataset -ddd did not generate a data_dictionary CSV. "
+                    f"stderr: {result.stderr}",
+                )
+
+            df = pd.read_csv(matches[0])
+            logger.info("Loaded data dictionary: %d fields (from API)", len(df))
+            self._cache.set(cache_key, df)
+            return df
+
+    def list_fields(
+        self,
+        entity: str | None = None,
+        name_pattern: str | None = None,
+        dataset_ref: str | None = None,
+        *,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        """列出数据集中的可用字段（精简视图）。
+
+        底层调用 ``get_data_dictionary`` 获取全量数据字典，然后筛选并
+        只保留 entity / name / type / title 四列。
+        """
+        df = self.get_data_dictionary(dataset_ref=dataset_ref, refresh=refresh)
+
+        if entity:
+            df = df[df["entity"] == entity]
+        if name_pattern:
+            df = df[df["name"].str.lower().str.contains(name_pattern.lower())]
+
+        cols = ["entity", "name", "type", "title"]
+        result = df[cols].reset_index(drop=True)
+        logger.info("list_fields: %d fields matched", len(result))
+        return result
+
+    def extract_fields(
+        self,
+        entity_fields: list[str],
+        dataset_ref: str | None = None,
+        *,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        """通过 ``dx extract_dataset`` 提取指定字段数据。"""
+        if not entity_fields:
+            return pd.DataFrame()
+
+        cache_key = f"extract:{dataset_ref or '_'}:{','.join(sorted(entity_fields))}"
+        if not refresh:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.debug("extract_fields: cache hit (%s)", entity_fields)
+                return cached
+
+        if dataset_ref is None:
+            _, dataset_ref = self.find_dataset()
+
+        env = self._make_subprocess_env()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "extract.csv"
+            fields_arg = ",".join(entity_fields)
+            cmd = [
+                "dx", "extract_dataset", dataset_ref,
+                "--fields", fields_arg,
+                "--delimiter", ",",
+                "--output", str(output_path),
+            ]
+            logger.info("Running: %s", " ".join(cmd))
+            try:
+                subprocess.run(
+                    cmd, check=True, capture_output=True, text=True, env=env,
+                )
+            except subprocess.CalledProcessError as e:
+                raise DXAPIError(
+                    f"dx extract_dataset failed: {e.stderr}",
+                    status_code=e.returncode,
+                    dx_error=e,
+                ) from e
+
+            if not output_path.exists():
+                return pd.DataFrame()
+
+            result = pd.read_csv(output_path)
+            self._cache.set(cache_key, result)
+            return result
+
+    # ── 内部工具 ──────────────────────────────────────────────────────────
+
+    def _make_subprocess_env(self) -> dict[str, str]:
+        """构建子进程环境变量，确保 ``dx`` CLI 能继承 security context。"""
+        env = os.environ.copy()
+        env["DX_SECURITY_CONTEXT"] = json.dumps({
+            "auth_token_type": "Bearer",
+            "auth_token": self._config.auth_token,
+        })
+        if self._current_project_id:
+            env["DX_PROJECT_CONTEXT_ID"] = self._current_project_id
+        return env

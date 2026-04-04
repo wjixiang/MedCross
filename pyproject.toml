@@ -15,3 +15,4 @@ members = ["libs/*", "apps/*"]
 "gwas-client" = { workspace = true}
 "pymr" = { workspace = true}
 "pride-client" = { workspace = true}
+"dx-client" = { workspace = true }

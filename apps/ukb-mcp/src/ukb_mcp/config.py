@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 from dotenv import load_dotenv
 load_dotenv()
+
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent  # apps/ukb-mcp/
 
 
 class Settings(BaseSettings):
@@ -45,6 +48,13 @@ class Settings(BaseSettings):
     )
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    @model_validator(mode="after")
+    def _resolve_cache_path(self) -> Settings:
+        p = Path(self.cache_db_path)
+        if not p.is_absolute():
+            self.cache_db_path = str(_BASE_DIR / p)
+        return self
 
 
 @lru_cache

@@ -44,5 +44,9 @@ class DXAPIError(DXClientError):
         super().__init__(message, dx_error=dx_error)
 
 
+class DXCohortError(DXClientError):
+    """Cohort 创建/操作失败。"""
+
+
 class DXConfigError(DXClientError):
     """客户端配置无效。"""

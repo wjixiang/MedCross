@@ -150,6 +150,22 @@ class DXDataObject(BaseModel):
     properties: dict[str, Any] = Field(default_factory=dict)
 
 
+class DXCohortInfo(BaseModel):
+    """DNAnexus cohort record 描述。"""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str = ""
+    name: str = ""
+    project: str = ""
+    folder: str = ""
+    state: str = ""
+    description: str = ""
+    created: int = 0
+    modified: int = 0
+    participant_count: int = 0
+
+
 class DXDatabaseClusterInfo(BaseModel):
     """DNAnexus database 对象完整描述（来自 database_describe API）。"""
 

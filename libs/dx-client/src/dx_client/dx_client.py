@@ -23,6 +23,7 @@ import logging
 import os
 import subprocess
 import tempfile
+from functools import reduce
 from pathlib import Path
 from typing import Any
 
@@ -32,17 +33,19 @@ from dxpy import DXRecord
 from dxpy.exceptions import DXAPIError as DxPyDXAPIError
 from dxpy.exceptions import DXError as DxPyDXError
 
-from .cache import CacheStatus, ICache
+from .cache import CacheStatus, ICache, MemoryCache
 from .dx_exceptions import (
     DXAPIError,
     DXAuthError,
     DXClientError,
     DXConfigError,
+    DXCohortError,
     DXDatabaseNotFoundError,
     DXFileNotFoundError,
 )
 from .dx_models import (
     DXClientConfig,
+    DXCohortInfo,
     DXDatabaseClusterInfo,
     DXDatabaseColumn,
     DXDatabaseInfo,
@@ -850,6 +853,97 @@ class DXClient(IDXClient):
             result = pd.read_csv(output_path)
             self._cache.set(cache_key, result)
             return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Cohort 操作
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def create_cohort(
+        self,
+        participant_ids: list[str],
+        name: str,
+        *,
+        dataset_ref: str | None = None,
+        folder: str = "/",
+        description: str = "",
+        validate: bool = True,
+    ) -> DXCohortInfo:
+        """基于 participant ID 列表在当前项目中创建 cohort。"""
+        from . import cohort as cohort_mod
+
+        self._ensure_connected()
+        project_id = self._require_project()
+
+        if not participant_ids:
+            raise DXCohortError("participant_ids must not be empty.")
+
+        # 1. 解析 dataset 引用
+        if dataset_ref is None:
+            _, dataset_ref = self.find_dataset()
+
+        parts = dataset_ref.split(":")
+        dataset_record_id = parts[-1]
+        dataset_project = parts[0] if len(parts) > 1 else project_id
+
+        # 2. 获取 vizserver 信息和 descriptor
+        viz_info = cohort_mod.get_visualize_info(dataset_record_id, dataset_project)
+        descriptor = cohort_mod.get_dataset_descriptor(dataset_record_id, dataset_project)
+
+        gpk = descriptor["model"]["global_primary_key"]
+        entity_name = gpk["entity"]
+        field_name = gpk["field"]
+
+        # 3. 校验 participant ID（可选）
+        if validate:
+            id_list, lambda_conv = cohort_mod.validate_participant_ids(
+                descriptor, dataset_project, viz_info, participant_ids,
+            )
+        else:
+            field_mapping = (
+                descriptor["model"]["entities"][entity_name]["fields"][field_name]["mapping"]
+            )
+            gpk_type = field_mapping["column_sql_type"]
+            if gpk_type in ("integer", "bigint"):
+                lambda_conv = lambda a, b: a + [int(b)]
+            elif gpk_type in ("float", "double"):
+                lambda_conv = lambda a, b: a + [float(b)]
+            else:
+                lambda_conv = lambda a, b: a + [str(b)]
+            id_list = reduce(lambda_conv, participant_ids, [])
+
+        # 4. 构建 filter payload 并生成 SQL
+        base_sql = viz_info.get("baseSql") or viz_info.get("base_sql")
+        filter_payload = cohort_mod.build_cohort_filter_payload(
+            id_list, entity_name, field_name,
+            dataset_project, lambda_conv, base_sql,
+        )
+        sql = cohort_mod.generate_cohort_sql(viz_info, filter_payload)
+
+        # 5. 创建 cohort record
+        record_payload = cohort_mod.build_cohort_record_payload(
+            name=name,
+            folder=folder,
+            project=project_id,
+            viz_info=viz_info,
+            filters=filter_payload["filters"],
+            sql=sql,
+            description=description,
+        )
+        cohort_id = cohort_mod.create_cohort_record(record_payload)
+
+        logger.info(
+            "Created cohort '%s' (%s) with %d participants in project '%s'",
+            name, cohort_id, len(id_list), project_id,
+        )
+
+        return DXCohortInfo(
+            id=cohort_id,
+            name=name,
+            project=project_id,
+            folder=folder,
+            description=description,
+            participant_count=len(id_list),
+        )
 
     # ── 内部工具 ──────────────────────────────────────────────────────────
 

@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 # 加载项目根目录的 .env
 load_dotenv(Path(__file__).resolve().parents[4] / ".env")
 
-from dx_client import DXClient, default_dx_client_config
+from dx_client import DXClient, DXCohortInfo, DXCohortError, default_dx_client_config
 from dx_client.dx_exceptions import DXDatabaseNotFoundError
 
 PASS = "\033[92mPASS\033[0m"
@@ -324,6 +324,74 @@ def test_disconnect(client: DXClient) -> None:
         report("disconnect()", "fail", str(e))
 
 
+def test_create_cohort(client: DXClient) -> None:
+    """端到端测试：创建 cohort 并验证 record 类型和 details。"""
+    import time
+
+    try:
+        _, ds_ref = client.find_dataset()
+    except Exception as e:
+        report("create_cohort()", "skip", f"find_dataset: {e}")
+        return
+
+    cohort_name = f"_test_cohort_{int(time.time())}"
+    test_eids = ["1000010", "1000025", "1000055"]
+    created_id: str | None = None
+
+    try:
+        # 使用 validate=False 避免慢速的 vizserver 数据查询
+        info = client.create_cohort(
+            participant_ids=test_eids,
+            name=cohort_name,
+            dataset_ref=ds_ref,
+            folder="/",
+            description="dx_client e2e test cohort (auto cleanup)",
+            validate=False,
+        )
+        created_id = info.id
+        assert isinstance(info, DXCohortInfo)
+        assert info.id.startswith("record-")
+        assert info.participant_count == len(test_eids)
+        report(
+            "create_cohort()", "pass",
+            f"id={info.id} name={info.name} participants={info.participant_count}",
+        )
+
+        # 验证 record 类型
+        rec = client.get_record(info.id)
+        types = rec.types or []
+        has_cohort = "CohortBrowser" in types
+        report("create_cohort() verify type", "pass" if has_cohort else "fail",
+               f"types={types}")
+
+        # 验证 details 包含必要字段
+        details = rec.details or {}
+        has_sql = "sql" in details and len(details["sql"]) > 0
+        has_filters = "filters" in details
+        has_dataset = "dataset" in details
+        ok = has_sql and has_filters and has_dataset
+        report("create_cohort() verify details", "pass" if ok else "fail",
+               f"sql={has_sql} filters={has_filters} dataset={has_dataset}")
+
+    except DXCohortError as e:
+        report("create_cohort()", "fail", f"DXCohortError: {e}")
+    except Exception as e:
+        report("create_cohort()", "fail", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
+
+    # 清理：尝试删除测试 cohort record
+    if created_id:
+        try:
+            import dxpy
+            dxpy.DXHTTPRequest(
+                "/%s/remove" % created_id,
+                {"project": client.current_project_id},
+            )
+            report("create_cohort() cleanup", "pass", f"removed {created_id}")
+        except Exception as e:
+            report("create_cohort() cleanup", "skip", f"{created_id}: {e}")
+        report("create_cohort()", "fail", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 def main() -> None:
     print("=" * 70)
@@ -355,6 +423,7 @@ def main() -> None:
         test_get_data_dictionary,
         test_list_fields,
         test_extract_fields,
+        test_create_cohort,
         test_disconnect,
     ]
 

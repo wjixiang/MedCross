@@ -20,6 +20,7 @@ class CacheStatus(str, Enum):
 
 if TYPE_CHECKING:
     from .dx_models import (
+        DXCohortInfo,
         DXDataObject,
         DXDatabaseClusterInfo,
         DXDatabaseInfo,
@@ -308,6 +309,37 @@ class IDXClient(ABC):
 
         Returns:
             DataFrame，包含 eid 列和请求的字段列。
+        """
+
+    # ── Cohort 操作 ──────────────────────────────────────────────────────
+
+    @abstractmethod
+    def create_cohort(
+        self,
+        participant_ids: list[str],
+        name: str,
+        *,
+        dataset_ref: str | None = None,
+        folder: str = "/",
+        description: str = "",
+        validate: bool = True,
+    ) -> DXCohortInfo:
+        """基于 participant ID 列表在当前项目中创建 cohort。
+
+        Args:
+            participant_ids: 参与者 ID 列表（如 UKB eid）。
+            name: Cohort 名称。
+            dataset_ref: 源数据集引用 (``"project-xxx:record-yyy"``)。
+                为 None 时自动调用 ``find_dataset()`` 查找。
+            folder: 目标文件夹路径。
+            description: Cohort 描述。
+            validate: 是否校验 ID 存在于 dataset（默认 True）。
+
+        Returns:
+            DXCohortInfo，包含新创建的 cohort 信息。
+
+        Raises:
+            DXCohortError: 创建失败、ID 校验失败等。
         """
 
     # ── 生命周期 ──────────────────────────────────────────────────────────

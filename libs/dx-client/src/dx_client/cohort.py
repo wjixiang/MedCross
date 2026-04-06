@@ -363,6 +363,7 @@ def build_cohort_record_payload(
     filters: dict[str, Any],
     sql: str,
     description: str = "",
+    entity_fields: list[str] | None = None,
 ) -> dict[str, Any]:
     """组装 DXRecord 创建 payload。
 
@@ -374,6 +375,7 @@ def build_cohort_record_payload(
         filters: pheno_filters dict。
         sql: 生成的 SQL。
         description: 可选描述。
+        entity_fields: 关联的字段列表（``"entity.field_name"`` 格式）。
 
     Returns:
         传给 ``new_dxrecord()`` 的完整 payload。
@@ -390,6 +392,8 @@ def build_cohort_record_payload(
         "sql": sql,
         "version": "3.0",
     }
+    if entity_fields:
+        details["fields"] = entity_fields
     if base_sql:
         details["baseSql"] = base_sql
     if combined:
@@ -438,3 +442,5 @@ def create_cohort_record(payload: dict[str, Any]) -> str:
         raise DXCohortError(
             f"Failed to create cohort record: {e}", dx_error=e,
         ) from e
+
+

@@ -9,6 +9,7 @@ dependencies = [
     "dxpy>=0.387.0",
     "pandas>=2.2.0",
     "pydantic>=2.7.0",
+    "pydantic-settings>=2.0.0",
     "duckdb==1.4.4",
 ]
 

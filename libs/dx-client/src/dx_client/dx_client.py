@@ -867,6 +867,7 @@ class DXClient(IDXClient):
         folder: str = "/",
         description: str = "",
         validate: bool = True,
+        entity_fields: list[str] | None = None,
     ) -> DXCohortInfo:
         """基于 participant ID 列表在当前项目中创建 cohort。"""
         from . import cohort as cohort_mod
@@ -928,6 +929,7 @@ class DXClient(IDXClient):
             filters=filter_payload["filters"],
             sql=sql,
             description=description,
+            entity_fields=entity_fields,
         )
         cohort_id = cohort_mod.create_cohort_record(record_payload)
 
@@ -943,7 +945,196 @@ class DXClient(IDXClient):
             folder=folder,
             description=description,
             participant_count=len(id_list),
+            entity_fields=entity_fields or [],
         )
+
+    def list_cohorts(
+        self,
+        name_pattern: str | None = None,
+        limit: int = 100,
+        *,
+        refresh: bool = False,
+    ) -> list[DXRecordInfo]:
+        """列出当前项目中的 cohort record。
+
+        通过 ``dxpy.find_data_objects`` 的 ``type`` 参数在平台侧过滤
+        ``CohortBrowser`` 类型，避免客户端二次过滤。
+
+        结果按 project + name_pattern + limit 缓存。
+        """
+        self._ensure_connected()
+        project = self._require_project()
+
+        cache_key = f"cohorts:{project}:{name_pattern or ''}:{limit}"
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        try:
+            kwargs: dict[str, Any] = {
+                "classname": "record",
+                "typename": "CohortBrowser",
+                "project": project,
+                "describe": True,
+                "limit": limit,
+            }
+            if name_pattern:
+                kwargs["name"] = name_pattern
+                kwargs["name_mode"] = self._resolve_name_mode(name_pattern)
+            result = [
+                DXRecordInfo.model_validate(r["describe"])
+                for r in dxpy.find_data_objects(**kwargs)
+            ]
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, "Failed to list cohorts")
+            raise
+
+    def get_cohort(
+        self,
+        cohort_id: str,
+        *,
+        refresh: bool = False,
+    ) -> DXRecordInfo:
+        """获取 cohort record 详情。
+
+        Args:
+            cohort_id: Cohort record ID (record-xxxx)。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            DXRecordInfo，details 中包含 filters、sql、dataset 等字段。
+        """
+        cache_key = f"cohort:{cohort_id}"
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        try:
+            record = DXRecord(cohort_id, project=self._current_project_id or None)
+            desc = record.describe()
+            details = record.get_details()
+            model = DXRecordInfo.model_validate(desc)
+            model.details = details  # type: ignore[attr-defined]
+            self._cache.set(cache_key, model)
+            return model
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to get cohort '{cohort_id}'")
+            raise
+
+    def find_cohort(
+        self,
+        name_pattern: str | None = None,
+        *,
+        refresh: bool = False,
+    ) -> DXRecordInfo:
+        """在当前项目中查找 cohort。
+
+        Args:
+            name_pattern: 名称匹配模式。为 None 时返回第一个 cohort。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            匹配的 DXRecordInfo。
+
+        Raises:
+            DXFileNotFoundError: 未找到 cohort。
+        """
+        cohorts = self.list_cohorts(name_pattern=name_pattern, limit=100, refresh=refresh)
+        if not cohorts:
+            pattern_desc = f"matching '{name_pattern}'" if name_pattern else ""
+            raise DXFileNotFoundError(
+                f"No cohort {pattern_desc} found in project '{self._current_project_id}'."
+            )
+        return cohorts[0]
+
+    def delete_cohort(self, cohort_id: str) -> None:
+        """删除当前项目中的 cohort record。
+
+        Args:
+            cohort_id: Cohort record ID (record-xxxx)。
+
+        Raises:
+            DXFileNotFoundError: record 不存在或无权限。
+        """
+        self._ensure_connected()
+        project_id = self._require_project()
+        try:
+            dxpy.DXHTTPRequest(
+                "/%s/remove" % cohort_id,
+                {"project": project_id},
+            )
+            logger.info("Deleted cohort '%s' from project '%s'", cohort_id, project_id)
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to delete cohort '{cohort_id}'")
+            raise
+
+    def extract_cohort_fields(
+        self,
+        cohort_id: str,
+        entity_fields: list[str],
+        *,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        """提取 cohort 内参与者的指定字段数据。
+
+        通过 ``dx extract_dataset <cohort_ref> --fields ...`` 实现。
+        """
+        self._ensure_connected()
+        project_id = self._require_project()
+
+        if not entity_fields:
+            return pd.DataFrame()
+
+        cache_key = f"cohort_data:{cohort_id}:{','.join(sorted(entity_fields))}"
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        cohort_ref = f"{project_id}:{cohort_id}"
+        env = self._make_subprocess_env()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "cohort_extract.csv"
+            fields_arg = ",".join(entity_fields)
+            cmd = [
+                "dx", "extract_dataset", cohort_ref,
+                "--fields", fields_arg,
+                "--delimiter", ",",
+                "--output", str(output_path),
+            ]
+            logger.info("Running: %s", " ".join(cmd))
+            try:
+                subprocess.run(
+                    cmd, check=True, capture_output=True, text=True, env=env,
+                )
+            except subprocess.CalledProcessError as e:
+                raise DXAPIError(
+                    f"dx extract_dataset (cohort) failed: {e.stderr}",
+                    status_code=e.returncode,
+                    dx_error=e,
+                ) from e
+
+            if not output_path.exists():
+                return pd.DataFrame()
+
+            df = pd.read_csv(output_path)
+            self._cache.set(cache_key, df)
+            logger.info(
+                "Extracted %d rows, %d fields from cohort '%s'",
+                len(df), len(entity_fields), cohort_id,
+            )
+            return df
 
     # ── 内部工具 ──────────────────────────────────────────────────────────
 

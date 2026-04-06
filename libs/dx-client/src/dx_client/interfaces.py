@@ -323,6 +323,7 @@ class IDXClient(ABC):
         folder: str = "/",
         description: str = "",
         validate: bool = True,
+        entity_fields: list[str] | None = None,
     ) -> DXCohortInfo:
         """基于 participant ID 列表在当前项目中创建 cohort。
 
@@ -334,12 +335,98 @@ class IDXClient(ABC):
             folder: 目标文件夹路径。
             description: Cohort 描述。
             validate: 是否校验 ID 存在于 dataset（默认 True）。
+            entity_fields: 关联的字段列表（``"entity.field_name"`` 格式）。
 
         Returns:
             DXCohortInfo，包含新创建的 cohort 信息。
 
         Raises:
             DXCohortError: 创建失败、ID 校验失败等。
+        """
+
+    @abstractmethod
+    def list_cohorts(
+        self,
+        name_pattern: str | None = None,
+        limit: int = 100,
+        *,
+        refresh: bool = False,
+    ) -> list[DXRecordInfo]:
+        """列出当前项目中的 cohort record。
+
+        通过平台侧 ``type=CohortBrowser`` 过滤，结果支持缓存。
+
+        Args:
+            name_pattern: 名称匹配模式。
+            limit: 返回数量上限。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            DXRecordInfo 列表。
+        """
+
+    @abstractmethod
+    def get_cohort(
+        self, cohort_id: str, *, refresh: bool = False,
+    ) -> DXRecordInfo:
+        """获取 cohort record 详情。
+
+        Args:
+            cohort_id: Cohort record ID。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            DXRecordInfo，details 包含 filters、sql、dataset 等。
+        """
+
+    @abstractmethod
+    def find_cohort(
+        self, name_pattern: str | None = None, *, refresh: bool = False,
+    ) -> DXRecordInfo:
+        """在当前项目中查找 cohort。
+
+        Args:
+            name_pattern: 名称匹配模式。为 None 时返回第一个。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            匹配的 DXRecordInfo。
+
+        Raises:
+            DXFileNotFoundError: 未找到 cohort。
+        """
+
+    @abstractmethod
+    def delete_cohort(self, cohort_id: str) -> None:
+        """删除当前项目中的 cohort record。
+
+        Args:
+            cohort_id: Cohort record ID (record-xxxx)。
+
+        Raises:
+            DXFileNotFoundError: record 不存在或无权限。
+        """
+
+    @abstractmethod
+    def extract_cohort_fields(
+        self,
+        cohort_id: str,
+        entity_fields: list[str],
+        *,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        """提取 cohort 内参与者的指定字段数据。
+
+        Args:
+            cohort_id: Cohort record ID。
+            entity_fields: ``"entity.field_name"`` 格式的字段列表。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            包含 cohort 参与者数据的 DataFrame。
+
+        Raises:
+            DXCohortError: vizserver 请求失败。
         """
 
     # ── 生命周期 ──────────────────────────────────────────────────────────

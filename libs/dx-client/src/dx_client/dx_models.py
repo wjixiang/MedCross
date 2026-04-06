@@ -5,20 +5,25 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_settings import BaseSettings
 
 
-class DXClientConfig(BaseModel):
+class DXClientConfig(BaseSettings):
     """DXClient 连接配置。
 
     优先级：构造参数 > 环境变量 > 默认值。
     """
 
+    model_config = ConfigDict(env_prefix="", extra="ignore")
+
     auth_token: str = Field(
         default="",
+        validation_alias="DX_AUTH_TOKEN",
         description="DNAnexus auth token，对应环境变量 DX_AUTH_TOKEN。",
     )
     project_context_id: str = Field(
         default="",
+        validation_alias="DX_PROJECT_CONTEXT_ID",
         description="默认项目上下文 ID，对应环境变量 DX_PROJECT_CONTEXT_ID。",
     )
     api_server_host: str = Field(
@@ -164,6 +169,7 @@ class DXCohortInfo(BaseModel):
     created: int = 0
     modified: int = 0
     participant_count: int = 0
+    entity_fields: list[str] = Field(default_factory=list)
 
 
 class DXDatabaseClusterInfo(BaseModel):

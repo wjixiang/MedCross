@@ -340,6 +340,7 @@ def test_create_cohort(client: DXClient) -> None:
 
     try:
         # 使用 validate=False 避免慢速的 vizserver 数据查询
+        test_fields = ["participant.eid", "participant.p31", "participant.p21003"]
         info = client.create_cohort(
             participant_ids=test_eids,
             name=cohort_name,
@@ -347,6 +348,7 @@ def test_create_cohort(client: DXClient) -> None:
             folder="/",
             description="dx_client e2e test cohort (auto cleanup)",
             validate=False,
+            entity_fields=test_fields,
         )
         created_id = info.id
         assert isinstance(info, DXCohortInfo)
@@ -356,6 +358,11 @@ def test_create_cohort(client: DXClient) -> None:
             "create_cohort()", "pass",
             f"id={info.id} name={info.name} participants={info.participant_count}",
         )
+
+        # 验证返回的 entity_fields
+        assert info.entity_fields == test_fields
+        report("create_cohort() entity_fields in return", "pass",
+               f"fields={info.entity_fields}")
 
         # 验证 record 类型
         rec = client.get_record(info.id)
@@ -369,9 +376,12 @@ def test_create_cohort(client: DXClient) -> None:
         has_sql = "sql" in details and len(details["sql"]) > 0
         has_filters = "filters" in details
         has_dataset = "dataset" in details
+        has_fields = details.get("fields") == test_fields
         ok = has_sql and has_filters and has_dataset
         report("create_cohort() verify details", "pass" if ok else "fail",
                f"sql={has_sql} filters={has_filters} dataset={has_dataset}")
+        report("create_cohort() verify details.fields", "pass" if has_fields else "fail",
+               f"fields={details.get('fields')}")
 
     except DXCohortError as e:
         report("create_cohort()", "fail", f"DXCohortError: {e}")
@@ -389,7 +399,6 @@ def test_create_cohort(client: DXClient) -> None:
             report("create_cohort() cleanup", "pass", f"removed {created_id}")
         except Exception as e:
             report("create_cohort() cleanup", "skip", f"{created_id}: {e}")
-        report("create_cohort()", "fail", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

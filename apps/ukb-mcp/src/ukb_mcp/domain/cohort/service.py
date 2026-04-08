@@ -38,19 +38,21 @@ class CohortService:
 
     def create_cohort(
         self,
-        participant_ids: list[str],
         name: str,
         *,
+        participant_ids: list[str] | None = None,
+        filters: dict | None = None,
         dataset_ref: str | None = None,
         folder: str = "/",
         description: str = "",
         validate: bool = True,
         entity_fields: list[str] | None = None,
     ) -> DXCohortInfo:
-        """基于 participant ID 列表创建 cohort。"""
+        """基于参与者 ID 列表或筛选条件创建 cohort。"""
         return self._dx.create_cohort(
-            participant_ids,
             name,
+            participant_ids=participant_ids,
+            filters=filters,
             dataset_ref=dataset_ref,
             folder=folder,
             description=description,

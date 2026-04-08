@@ -47,7 +47,6 @@ from .dx_models import (
     DXClientConfig,
     DXCohortInfo,
     DXDatabaseClusterInfo,
-    DXDatabaseColumn,
     DXDatabaseInfo,
     DXDatabaseTable,
     DXDataObject,
@@ -158,9 +157,7 @@ class DXClient(IDXClient):
     def _ensure_connected(self) -> None:
         """断言已连接，未连接时抛出异常。"""
         if not self._initialized:
-            raise DXConfigError(
-                "DXClient is not connected. Call connect() first."
-            )
+            raise DXConfigError("DXClient is not connected. Call connect() first.")
 
     @staticmethod
     def _resolve_name_mode(pattern: str) -> str:
@@ -195,7 +192,10 @@ class DXClient(IDXClient):
     # ═══════════════════════════════════════════════════════════════════════
 
     def list_projects(
-        self, name_pattern: str | None = None, *, refresh: bool = False,
+        self,
+        name_pattern: str | None = None,
+        *,
+        refresh: bool = False,
     ) -> list[DXProject]:
         self._ensure_connected()
         cache_key = f"projects:{name_pattern or '*'}"
@@ -218,7 +218,10 @@ class DXClient(IDXClient):
             raise  # unreachable
 
     def get_project(
-        self, project_id: str, *, refresh: bool = False,
+        self,
+        project_id: str,
+        *,
+        refresh: bool = False,
     ) -> DXProject:
         self._ensure_connected()
         cache_key = f"project:{project_id}"
@@ -262,7 +265,9 @@ class DXClient(IDXClient):
     ) -> list[DXFileInfo]:
         self._ensure_connected()
         project = self._require_project()
-        cache_key = f"files:{project}:{folder or '/'}:{name_pattern or ''}:{recurse}:{limit}"
+        cache_key = (
+            f"files:{project}:{folder or '/'}:{name_pattern or ''}:{recurse}:{limit}"
+        )
         if refresh:
             self._cache.last_status = CacheStatus.SKIP
         else:
@@ -292,7 +297,10 @@ class DXClient(IDXClient):
             raise
 
     def describe_file(
-        self, file_id: str, *, refresh: bool = False,
+        self,
+        file_id: str,
+        *,
+        refresh: bool = False,
     ) -> DXFileInfo:
         self._ensure_connected()
         cache_key = f"file:{file_id}"
@@ -376,7 +384,10 @@ class DXClient(IDXClient):
             raise
 
     def get_record(
-        self, record_id: str, *, refresh: bool = False,
+        self,
+        record_id: str,
+        *,
+        refresh: bool = False,
     ) -> DXRecordInfo:
         self._ensure_connected()
         cache_key = f"record:{record_id}"
@@ -414,9 +425,7 @@ class DXClient(IDXClient):
         self._ensure_connected()
         project = self._require_project()
         props_str = json.dumps(properties, sort_keys=True) if properties else ""
-        cache_key = (
-            f"find_objects:{project}:{classname}:{name_pattern or ''}:{props_str}:{limit}"
-        )
+        cache_key = f"find_objects:{project}:{classname}:{name_pattern or ''}:{props_str}:{limit}"
         if refresh:
             self._cache.last_status = CacheStatus.SKIP
         else:
@@ -487,7 +496,10 @@ class DXClient(IDXClient):
             raise
 
     def get_database(
-        self, database_id: str, *, refresh: bool = False,
+        self,
+        database_id: str,
+        *,
+        refresh: bool = False,
     ) -> DXDatabaseInfo:
         """获取 database 数据对象详情。"""
         self._ensure_connected()
@@ -507,13 +519,18 @@ class DXClient(IDXClient):
             raise
 
     def find_database(
-        self, name_pattern: str | None = None, *, refresh: bool = False,
+        self,
+        name_pattern: str | None = None,
+        *,
+        refresh: bool = False,
     ) -> DXDatabaseInfo:
         """在当前项目中查找 database 数据对象。
 
         若 *name_pattern* 为 None，返回项目中第一个 database。
         """
-        databases = self.list_databases(name_pattern=name_pattern, limit=10, refresh=refresh)
+        databases = self.list_databases(
+            name_pattern=name_pattern, limit=10, refresh=refresh
+        )
         if not databases:
             project_id = self._require_project()
             detail = f" Matching pattern: '{name_pattern}'" if name_pattern else ""
@@ -523,7 +540,10 @@ class DXClient(IDXClient):
         return databases[0]
 
     def describe_database_cluster(
-        self, db_cluster_id: str, *, refresh: bool = False,
+        self,
+        db_cluster_id: str,
+        *,
+        refresh: bool = False,
     ) -> DXDatabaseClusterInfo:
         """获取数据库集群描述信息。
 
@@ -539,7 +559,7 @@ class DXClient(IDXClient):
             if cached is not None:
                 return cached
         try:
-            raw = dxpy.api.database_describe(db_cluster_id)
+            raw = dxpy.api.database_describe(db_cluster_id)  # type: ignore
             result = DXDatabaseClusterInfo.model_validate(raw)
             self._cache.set(cache_key, result)
             return result
@@ -574,7 +594,7 @@ class DXClient(IDXClient):
 
         self._ensure_connected()
         try:
-            resp = dxpy.api.database_list_folder(database_id, {})
+            resp = dxpy.api.database_list_folder(database_id, {})  # type: ignore
         except DxPyDXError as e:
             self._handle_dx_error(
                 e, f"Failed to list folder for database '{database_id}'"
@@ -646,9 +666,13 @@ class DXClient(IDXClient):
 
         logger.info(
             "Extracting %d fields from database '%s' via dataset '%s'",
-            len(entity_fields), database_id, dataset_ref,
+            len(entity_fields),
+            database_id,
+            dataset_ref,
         )
-        result = self.extract_fields(entity_fields, dataset_ref=dataset_ref, refresh=refresh)
+        result = self.extract_fields(
+            entity_fields, dataset_ref=dataset_ref, refresh=refresh
+        )
         self._cache.set(cache_key, result)
         return result
 
@@ -670,7 +694,9 @@ class DXClient(IDXClient):
             dataset_ref: 数据集引用。为 None 时自动查找。
             refresh: 为 True 时跳过缓存，强制从云端获取。
         """
-        df = self.query_database(database_id, entity_fields, dataset_ref, refresh=refresh)
+        df = self.query_database(
+            database_id, entity_fields, dataset_ref, refresh=refresh
+        )
 
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -678,7 +704,10 @@ class DXClient(IDXClient):
 
         logger.info(
             "Downloaded %d rows (%d fields) from database '%s' to '%s'",
-            len(df), len(entity_fields), database_id, path,
+            len(df),
+            len(entity_fields),
+            database_id,
+            path,
         )
         return path
 
@@ -687,7 +716,10 @@ class DXClient(IDXClient):
     # ═══════════════════════════════════════════════════════════════════════
 
     def find_dataset(
-        self, name_pattern: str = "app*.dataset", *, refresh: bool = False,
+        self,
+        name_pattern: str = "app*.dataset",
+        *,
+        refresh: bool = False,
     ) -> tuple[str, str]:
         """在当前项目中查找 UKB Dataset record。
 
@@ -711,7 +743,9 @@ class DXClient(IDXClient):
         self._ensure_connected()
         project_id = self._require_project()
         datasets = self.find_data_objects(
-            classname="record", name_pattern=name_pattern, limit=10,
+            classname="record",
+            name_pattern=name_pattern,
+            limit=10,
         )
         for obj in datasets:
             rec = self.get_record(obj.id)
@@ -727,7 +761,10 @@ class DXClient(IDXClient):
         )
 
     def get_data_dictionary(
-        self, dataset_ref: str | None = None, *, refresh: bool = False,
+        self,
+        dataset_ref: str | None = None,
+        *,
+        refresh: bool = False,
     ) -> pd.DataFrame:
         """通过 ``dx extract_dataset -ddd`` 提取数据字典。
 
@@ -748,14 +785,22 @@ class DXClient(IDXClient):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             cmd = [
-                "dx", "extract_dataset", dataset_ref,
-                "-ddd", "--delimiter", ",",
+                "dx",
+                "extract_dataset",
+                dataset_ref,
+                "-ddd",
+                "--delimiter",
+                ",",
             ]
             logger.info("Running: %s", " ".join(cmd))
             try:
                 result = subprocess.run(
-                    cmd, check=True, capture_output=True, text=True,
-                    cwd=tmpdir, env=env,
+                    cmd,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    cwd=tmpdir,
+                    env=env,
                 )
             except subprocess.CalledProcessError as e:
                 raise DXAPIError(
@@ -830,15 +875,24 @@ class DXClient(IDXClient):
             output_path = Path(tmpdir) / "extract.csv"
             fields_arg = ",".join(entity_fields)
             cmd = [
-                "dx", "extract_dataset", dataset_ref,
-                "--fields", fields_arg,
-                "--delimiter", ",",
-                "--output", str(output_path),
+                "dx",
+                "extract_dataset",
+                dataset_ref,
+                "--fields",
+                fields_arg,
+                "--delimiter",
+                ",",
+                "--output",
+                str(output_path),
             ]
             logger.info("Running: %s", " ".join(cmd))
             try:
                 subprocess.run(
-                    cmd, check=True, capture_output=True, text=True, env=env,
+                    cmd,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    env=env,
                 )
             except subprocess.CalledProcessError as e:
                 raise DXAPIError(
@@ -860,23 +914,30 @@ class DXClient(IDXClient):
 
     def create_cohort(
         self,
-        participant_ids: list[str],
         name: str,
         *,
+        participant_ids: list[str] | None = None,
+        filters: dict[str, Any] | None = None,
         dataset_ref: str | None = None,
         folder: str = "/",
         description: str = "",
         validate: bool = True,
         entity_fields: list[str] | None = None,
     ) -> DXCohortInfo:
-        """基于 participant ID 列表在当前项目中创建 cohort。"""
+        """基于 participant ID 列表或筛选条件在当前项目中创建 cohort。"""
         from . import cohort as cohort_mod
 
         self._ensure_connected()
         project_id = self._require_project()
 
-        if not participant_ids:
-            raise DXCohortError("participant_ids must not be empty.")
+        if participant_ids is not None and filters is not None:
+            raise DXCohortError(
+                "Provide exactly one of 'participant_ids' or 'filters', not both."
+            )
+        if participant_ids is None and filters is None:
+            raise DXCohortError(
+                "Either 'participant_ids' or 'filters' must be provided."
+            )
 
         # 1. 解析 dataset 引用
         if dataset_ref is None:
@@ -886,38 +947,69 @@ class DXClient(IDXClient):
         dataset_record_id = parts[-1]
         dataset_project = parts[0] if len(parts) > 1 else project_id
 
-        # 2. 获取 vizserver 信息和 descriptor
+        # 2. 获取 vizserver 信息
         viz_info = cohort_mod.get_visualize_info(dataset_record_id, dataset_project)
-        descriptor = cohort_mod.get_dataset_descriptor(dataset_record_id, dataset_project)
-
-        gpk = descriptor["model"]["global_primary_key"]
-        entity_name = gpk["entity"]
-        field_name = gpk["field"]
-
-        # 3. 校验 participant ID（可选）
-        if validate:
-            id_list, lambda_conv = cohort_mod.validate_participant_ids(
-                descriptor, dataset_project, viz_info, participant_ids,
-            )
-        else:
-            field_mapping = (
-                descriptor["model"]["entities"][entity_name]["fields"][field_name]["mapping"]
-            )
-            gpk_type = field_mapping["column_sql_type"]
-            if gpk_type in ("integer", "bigint"):
-                lambda_conv = lambda a, b: a + [int(b)]
-            elif gpk_type in ("float", "double"):
-                lambda_conv = lambda a, b: a + [float(b)]
-            else:
-                lambda_conv = lambda a, b: a + [str(b)]
-            id_list = reduce(lambda_conv, participant_ids, [])
-
-        # 4. 构建 filter payload 并生成 SQL
         base_sql = viz_info.get("baseSql") or viz_info.get("base_sql")
-        filter_payload = cohort_mod.build_cohort_filter_payload(
-            id_list, entity_name, field_name,
-            dataset_project, lambda_conv, base_sql,
-        )
+
+        # 3. 构建 filter payload
+        if participant_ids is not None:
+            if not participant_ids:
+                raise DXCohortError("participant_ids must not be empty.")
+
+            descriptor = cohort_mod.get_dataset_descriptor(
+                dataset_record_id, dataset_project
+            )
+
+            gpk = descriptor["model"]["global_primary_key"]
+            entity_name = gpk["entity"]
+            field_name = gpk["field"]
+
+            if validate:
+                id_list, _conv = cohort_mod.validate_participant_ids(
+                    descriptor,
+                    dataset_project,
+                    viz_info,
+                    participant_ids,
+                )
+            else:
+                field_mapping = descriptor["model"]["entities"][entity_name]["fields"][
+                    field_name
+                ]["mapping"]
+                gpk_type = field_mapping["column_sql_type"]
+                if gpk_type in ("integer", "bigint"):
+
+                    def _conv(a: list, b: str) -> list:
+                        return a + [int(b)]
+                elif gpk_type in ("float", "double"):
+
+                    def _conv(a: list, b: str) -> list:
+                        return a + [float(b)]
+                else:
+
+                    def _conv(a: list, b: str) -> list:
+                        return a + [str(b)]
+
+                id_list = reduce(_conv, participant_ids, [])
+
+            filter_payload = cohort_mod.build_cohort_filter_payload(
+                id_list,
+                entity_name,
+                field_name,
+                dataset_project,
+                _conv,
+                base_sql,
+            )
+            participant_count = len(id_list)
+        else:
+            filter_payload: dict[str, Any] = {
+                "filters": filters,
+                "project_context": dataset_project,
+            }
+            if base_sql is not None:
+                filter_payload["base_sql"] = base_sql
+            participant_count = 0
+
+        # 4. 生成 SQL
         sql = cohort_mod.generate_cohort_sql(viz_info, filter_payload)
 
         # 5. 创建 cohort record
@@ -935,7 +1027,10 @@ class DXClient(IDXClient):
 
         logger.info(
             "Created cohort '%s' (%s) with %d participants in project '%s'",
-            name, cohort_id, len(id_list), project_id,
+            name,
+            cohort_id,
+            participant_count,
+            project_id,
         )
 
         return DXCohortInfo(
@@ -944,7 +1039,7 @@ class DXClient(IDXClient):
             project=project_id,
             folder=folder,
             description=description,
-            participant_count=len(id_list),
+            participant_count=participant_count,
             entity_fields=entity_fields or [],
         )
 
@@ -1047,7 +1142,9 @@ class DXClient(IDXClient):
         Raises:
             DXFileNotFoundError: 未找到 cohort。
         """
-        cohorts = self.list_cohorts(name_pattern=name_pattern, limit=100, refresh=refresh)
+        cohorts = self.list_cohorts(
+            name_pattern=name_pattern, limit=100, refresh=refresh
+        )
         if not cohorts:
             pattern_desc = f"matching '{name_pattern}'" if name_pattern else ""
             raise DXFileNotFoundError(
@@ -1108,15 +1205,24 @@ class DXClient(IDXClient):
             output_path = Path(tmpdir) / "cohort_extract.csv"
             fields_arg = ",".join(entity_fields)
             cmd = [
-                "dx", "extract_dataset", cohort_ref,
-                "--fields", fields_arg,
-                "--delimiter", ",",
-                "--output", str(output_path),
+                "dx",
+                "extract_dataset",
+                cohort_ref,
+                "--fields",
+                fields_arg,
+                "--delimiter",
+                ",",
+                "--output",
+                str(output_path),
             ]
             logger.info("Running: %s", " ".join(cmd))
             try:
                 subprocess.run(
-                    cmd, check=True, capture_output=True, text=True, env=env,
+                    cmd,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    env=env,
                 )
             except subprocess.CalledProcessError as e:
                 raise DXAPIError(
@@ -1132,7 +1238,9 @@ class DXClient(IDXClient):
             self._cache.set(cache_key, df)
             logger.info(
                 "Extracted %d rows, %d fields from cohort '%s'",
-                len(df), len(entity_fields), cohort_id,
+                len(df),
+                len(entity_fields),
+                cohort_id,
             )
             return df
 
@@ -1141,10 +1249,12 @@ class DXClient(IDXClient):
     def _make_subprocess_env(self) -> dict[str, str]:
         """构建子进程环境变量，确保 ``dx`` CLI 能继承 security context。"""
         env = os.environ.copy()
-        env["DX_SECURITY_CONTEXT"] = json.dumps({
-            "auth_token_type": "Bearer",
-            "auth_token": self._config.auth_token,
-        })
+        env["DX_SECURITY_CONTEXT"] = json.dumps(
+            {
+                "auth_token_type": "Bearer",
+                "auth_token": self._config.auth_token,
+            }
+        )
         if self._current_project_id:
             env["DX_PROJECT_CONTEXT_ID"] = self._current_project_id
         return env

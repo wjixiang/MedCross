@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CohortFilter(BaseModel):
@@ -19,8 +19,15 @@ class CohortFilter(BaseModel):
 class CohortCreateRequest(BaseModel):
     """创建队列请求。"""
 
-    participant_ids: list[str] = Field(description="参与者 ID 列表。")
     name: str = Field(description="队列名称。")
+    participant_ids: list[str] | None = Field(
+        default=None,
+        description="参与者 ID 列表。与 filters 二选一。",
+    )
+    filters: dict | None = Field(
+        default=None,
+        description="原始 vizserver pheno_filters 结构。与 participant_ids 二选一。",
+    )
     dataset_ref: str | None = Field(default=None, description="Dataset 引用。")
     folder: str = Field(default="/", description="目标文件夹路径。")
     description: str = Field(default="", description="队列描述。")
@@ -29,6 +36,18 @@ class CohortCreateRequest(BaseModel):
         default_factory=list,
         description='关联字段列表（"entity.field_name" 格式）。',
     )
+
+    @model_validator(mode="after")
+    def check_cohort_definition(self) -> "CohortCreateRequest":
+        if self.participant_ids is not None and self.filters is not None:
+            raise ValueError(
+                "Provide exactly one of 'participant_ids' or 'filters', not both."
+            )
+        if self.participant_ids is None and self.filters is None:
+            raise ValueError(
+                "Either 'participant_ids' or 'filters' must be provided."
+            )
+        return self
 
 
 class CohortInfo(BaseModel):

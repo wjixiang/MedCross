@@ -3,19 +3,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-
-class CacheStatus(str, Enum):
-    """缓存操作结果。"""
-
-    HIT = "hit"
-    MISS = "miss"
-    SKIP = "skip"
+from .cache.base import CacheStatus
 
 
 if TYPE_CHECKING:
@@ -316,32 +309,38 @@ class IDXClient(ABC):
     @abstractmethod
     def create_cohort(
         self,
-        participant_ids: list[str],
         name: str,
         *,
+        participant_ids: list[str] | None = None,
+        filters: dict[str, Any] | None = None,
         dataset_ref: str | None = None,
         folder: str = "/",
         description: str = "",
         validate: bool = True,
         entity_fields: list[str] | None = None,
     ) -> DXCohortInfo:
-        """基于 participant ID 列表在当前项目中创建 cohort。
+        """基于 participant ID 列表或筛选条件在当前项目中创建 cohort。
+
+        ``participant_ids`` 与 ``filters`` 二选一。
 
         Args:
-            participant_ids: 参与者 ID 列表（如 UKB eid）。
             name: Cohort 名称。
+            participant_ids: 参与者 ID 列表（如 UKB eid）。
+                内部转为 ``in`` 过滤条件。
+            filters: 原始 vizserver pheno_filters 结构，支持全部 26 种条件。
             dataset_ref: 源数据集引用 (``"project-xxx:record-yyy"``)。
                 为 None 时自动调用 ``find_dataset()`` 查找。
             folder: 目标文件夹路径。
             description: Cohort 描述。
             validate: 是否校验 ID 存在于 dataset（默认 True）。
+                仅在 ``participant_ids`` 模式下生效。
             entity_fields: 关联的字段列表（``"entity.field_name"`` 格式）。
 
         Returns:
             DXCohortInfo，包含新创建的 cohort 信息。
 
         Raises:
-            DXCohortError: 创建失败、ID 校验失败等。
+            DXCohortError: 参数不合法、创建失败、ID 校验失败等。
         """
 
     @abstractmethod

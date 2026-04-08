@@ -78,10 +78,11 @@ def create_cohort(
     req: CohortCreateRequest,
     service: CohortService = Depends(get_cohort_service),
 ) -> CohortInfo:
-    """基于参与者 ID 列表创建队列。"""
+    """基于参与者 ID 列表或筛选条件创建队列。"""
     info = service.create_cohort(
-        participant_ids=req.participant_ids,
         name=req.name,
+        participant_ids=req.participant_ids,
+        filters=req.filters,
         dataset_ref=req.dataset_ref,
         folder=req.folder,
         description=req.description,

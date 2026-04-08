@@ -17,7 +17,7 @@ from typing import Any, Callable
 import dxpy
 from dxpy.bindings.dxrecord import new_dxrecord
 
-from .dx_exceptions import DXAPIError, DXCohortError
+from .dx_exceptions import DXCohortError
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,8 @@ def get_dataset_descriptor(record_id: str, project: str) -> dict[str, Any]:
             f"Failed to describe dataset '{record_id}': {e}", dx_error=e,
         ) from e
 
-    descriptor_link = desc.get("details", {}).get("descriptor")
+    details: dict[str, Any] = desc.get("details", {})  # type: ignore[assignment]
+    descriptor_link = details.get("descriptor")
     if not descriptor_link:
         raise DXCohortError(
             f"No descriptor found in dataset '{record_id}' details."
@@ -101,7 +102,7 @@ def get_dataset_descriptor(record_id: str, project: str) -> dict[str, Any]:
 
     try:
         file_obj = dxpy.DXFile(file_id, project=project, mode="rb")
-        raw = file_obj.read()
+        raw: bytes = file_obj.read()  # type: ignore[assignment]
         buf = io.BytesIO(raw)
         with gzip.open(buf, "rt", encoding="utf-8") as f:
             return json.load(f, object_pairs_hook=OrderedDict)
@@ -144,18 +145,21 @@ def validate_participant_ids(
     gpk_type = field_mapping["column_sql_type"]
 
     if gpk_type in ("integer", "bigint"):
-        lambda_conv: Callable = lambda a, b: a + [int(b)]
+        def _conv(a: list, b: str) -> list:
+            return a + [int(b)]
     elif gpk_type in ("float", "double"):
-        lambda_conv = lambda a, b: a + [float(b)]
+        def _conv(a: list, b: str) -> list:
+            return a + [float(b)]
     elif gpk_type == "string":
-        lambda_conv = lambda a, b: a + [str(b)]
+        def _conv(a: list, b: str) -> list:
+            return a + [str(b)]
     else:
         raise DXCohortError(
             f"Unsupported primary key type '{gpk_type}'. "
             "Only string, integer, and float are supported."
         )
 
-    id_list = reduce(lambda_conv, ids, [])
+    id_list = reduce(_conv, ids, [])
     entity_field = f"{entity_name}${field_name}"
 
     payload = {
@@ -189,7 +193,7 @@ def validate_participant_ids(
             f"{missing}"
         )
 
-    return id_list, lambda_conv
+    return id_list, _conv
 
 
 # ── Filter payload 构建 ─────────────────────────────────────────────────
@@ -437,7 +441,7 @@ def create_cohort_record(payload: dict[str, Any]) -> str:
     """
     try:
         record = new_dxrecord(**payload)
-        return record.get_id()
+        return str(record.get_id())
     except Exception as e:
         raise DXCohortError(
             f"Failed to create cohort record: {e}", dx_error=e,

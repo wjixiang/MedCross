@@ -325,7 +325,7 @@ def test_disconnect(client: DXClient) -> None:
 
 
 def test_create_cohort(client: DXClient) -> None:
-    """端到端测试：创建 cohort 并验证 record 类型和 details。"""
+    """端到端测试：通过 pheno_filters 创建 cohort 并验证 record。"""
     import time
 
     try:
@@ -335,83 +335,7 @@ def test_create_cohort(client: DXClient) -> None:
         return
 
     cohort_name = f"_test_cohort_{int(time.time())}"
-    test_eids = ["1000010", "1000025", "1000055"]
     created_id: str | None = None
-
-    try:
-        # 使用 validate=False 避免慢速的 vizserver 数据查询
-        test_fields = ["participant.eid", "participant.p31", "participant.p21003"]
-        info = client.create_cohort(
-            name=cohort_name,
-            participant_ids=test_eids,
-            dataset_ref=ds_ref,
-            folder="/",
-            description="dx_client e2e test cohort (auto cleanup)",
-            validate=False,
-            entity_fields=test_fields,
-        )
-        created_id = info.id
-        assert isinstance(info, DXCohortInfo)
-        assert info.id.startswith("record-")
-        assert info.participant_count == len(test_eids)
-        report(
-            "create_cohort()", "pass",
-            f"id={info.id} name={info.name} participants={info.participant_count}",
-        )
-
-        # 验证返回的 entity_fields
-        assert info.entity_fields == test_fields
-        report("create_cohort() entity_fields in return", "pass",
-               f"fields={info.entity_fields}")
-
-        # 验证 record 类型
-        rec = client.get_record(info.id)
-        types = rec.types or []
-        has_cohort = "CohortBrowser" in types
-        report("create_cohort() verify type", "pass" if has_cohort else "fail",
-               f"types={types}")
-
-        # 验证 details 包含必要字段
-        details = rec.details or {}
-        has_sql = "sql" in details and len(details["sql"]) > 0
-        has_filters = "filters" in details
-        has_dataset = "dataset" in details
-        has_fields = details.get("fields") == test_fields
-        ok = has_sql and has_filters and has_dataset
-        report("create_cohort() verify details", "pass" if ok else "fail",
-               f"sql={has_sql} filters={has_filters} dataset={has_dataset}")
-        report("create_cohort() verify details.fields", "pass" if has_fields else "fail",
-               f"fields={details.get('fields')}")
-
-    except DXCohortError as e:
-        report("create_cohort()", "fail", f"DXCohortError: {e}")
-    except Exception as e:
-        report("create_cohort()", "fail", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
-
-    # 清理：尝试删除测试 cohort record
-    if created_id:
-        try:
-            import dxpy
-            dxpy.DXHTTPRequest(
-                "/%s/remove" % created_id,
-                {"project": client.current_project_id},
-            )
-            report("create_cohort() cleanup", "pass", f"removed {created_id}")
-        except Exception as e:
-            report("create_cohort() cleanup", "skip", f"{created_id}: {e}")
-
-
-def test_create_cohort_with_filters(client: DXClient) -> None:
-    """端到端测试：通过 pheno_filters 创建 cohort 并验证 record。"""
-    import time
-
-    try:
-        _, ds_ref = client.find_dataset()
-    except Exception as e:
-        report("create_cohort(filters)", "skip", f"find_dataset: {e}")
-        return
-
-    cohort_name = f"_test_cohort_filters_{int(time.time())}"
     created_id: str | None = None
 
     try:
@@ -439,26 +363,26 @@ def test_create_cohort_with_filters(client: DXClient) -> None:
         created_id = info.id
         assert isinstance(info, DXCohortInfo)
         assert info.id.startswith("record-")
-        report("create_cohort(filters)", "pass", f"id={info.id} name={info.name}")
+        report("create_cohort()", "pass", f"id={info.id} name={info.name}")
 
         # 验证 record 类型和 details
         rec = client.get_record(info.id)
         types = rec.types or []
         has_cohort = "CohortBrowser" in types
-        report("create_cohort(filters) verify type", "pass" if has_cohort else "fail",
+        report("create_cohort() verify type", "pass" if has_cohort else "fail",
                f"types={types}")
 
         details = rec.details or {}
         has_sql = "sql" in details and len(details["sql"]) > 0
         has_filters = "filters" in details
         ok = has_sql and has_filters
-        report("create_cohort(filters) verify details", "pass" if ok else "fail",
+        report("create_cohort() verify details", "pass" if ok else "fail",
                f"sql={has_sql} filters={has_filters}")
 
     except DXCohortError as e:
-        report("create_cohort(filters)", "fail", f"DXCohortError: {e}")
+        report("create_cohort()", "fail", f"DXCohortError: {e}")
     except Exception as e:
-        report("create_cohort(filters)", "fail", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
+        report("create_cohort()", "fail", f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
 
     # 清理
     if created_id:
@@ -468,9 +392,9 @@ def test_create_cohort_with_filters(client: DXClient) -> None:
                 "/%s/remove" % created_id,
                 {"project": client.current_project_id},
             )
-            report("create_cohort(filters) cleanup", "pass", f"removed {created_id}")
+            report("create_cohort() cleanup", "pass", f"removed {created_id}")
         except Exception as e:
-            report("create_cohort(filters) cleanup", "skip", f"{created_id}: {e}")
+            report("create_cohort() cleanup", "skip", f"{created_id}: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -505,7 +429,6 @@ def main() -> None:
         test_list_fields,
         test_extract_fields,
         test_create_cohort,
-        test_create_cohort_with_filters,
         test_disconnect,
     ]
 

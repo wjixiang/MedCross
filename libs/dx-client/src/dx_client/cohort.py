@@ -11,12 +11,9 @@ import io
 import json
 import logging
 from collections import OrderedDict
-from functools import reduce
-from typing import Any, Callable
+from typing import Any
 
 import dxpy
-from dxpy.bindings.dxrecord import new_dxrecord
-
 from .dx_exceptions import DXCohortError
 
 logger = logging.getLogger(__name__)
@@ -45,7 +42,8 @@ def get_visualize_info(record_id: str, project: str) -> dict[str, Any]:
         )
     except Exception as e:
         raise DXCohortError(
-            f"Failed to get visualize info for '{record_id}': {e}", dx_error=e,
+            f"Failed to get visualize info for '{record_id}': {e}",
+            dx_error=e,
         ) from e
 
     if resp.get("datasetVersion") != "3.0":
@@ -82,15 +80,14 @@ def get_dataset_descriptor(record_id: str, project: str) -> dict[str, Any]:
         )
     except Exception as e:
         raise DXCohortError(
-            f"Failed to describe dataset '{record_id}': {e}", dx_error=e,
+            f"Failed to describe dataset '{record_id}': {e}",
+            dx_error=e,
         ) from e
 
     details: dict[str, Any] = desc.get("details", {})  # type: ignore[assignment]
     descriptor_link = details.get("descriptor")
     if not descriptor_link:
-        raise DXCohortError(
-            f"No descriptor found in dataset '{record_id}' details."
-        )
+        raise DXCohortError(f"No descriptor found in dataset '{record_id}' details.")
 
     # 解析 $dnanexus_link
     if isinstance(descriptor_link, dict) and "$dnanexus_link" in descriptor_link:
@@ -108,215 +105,9 @@ def get_dataset_descriptor(record_id: str, project: str) -> dict[str, Any]:
             return json.load(f, object_pairs_hook=OrderedDict)
     except Exception as e:
         raise DXCohortError(
-            f"Failed to read descriptor file '{file_id}': {e}", dx_error=e,
+            f"Failed to read descriptor file '{file_id}': {e}",
+            dx_error=e,
         ) from e
-
-
-# ── ID 校验 ─────────────────────────────────────────────────────────────
-
-
-def validate_participant_ids(
-    descriptor: dict[str, Any],
-    project: str,
-    viz_info: dict[str, Any],
-    ids: list[str],
-) -> tuple[list[Any], Callable]:
-    """校验 participant ID 是否存在于 dataset 中。
-
-    Args:
-        descriptor: dataset descriptor dict。
-        project: 数据集所属项目 ID。
-        viz_info: ``get_visualize_info()`` 的返回值。
-        ids: 待校验的 participant ID 列表。
-
-    Returns:
-        (类型转换后的 ID 列表, 转换函数)。
-
-    Raises:
-        DXCohortError: 不支持的 ID 类型或 ID 不存在于 dataset。
-    """
-    gpk = descriptor["model"]["global_primary_key"]
-    entity_name = gpk["entity"]
-    field_name = gpk["field"]
-
-    field_mapping = (
-        descriptor["model"]["entities"][entity_name]["fields"][field_name]["mapping"]
-    )
-    gpk_type = field_mapping["column_sql_type"]
-
-    if gpk_type in ("integer", "bigint"):
-        def _conv(a: list, b: str) -> list:
-            return a + [int(b)]
-    elif gpk_type in ("float", "double"):
-        def _conv(a: list, b: str) -> list:
-            return a + [float(b)]
-    elif gpk_type == "string":
-        def _conv(a: list, b: str) -> list:
-            return a + [str(b)]
-    else:
-        raise DXCohortError(
-            f"Unsupported primary key type '{gpk_type}'. "
-            "Only string, integer, and float are supported."
-        )
-
-    id_list = reduce(_conv, ids, [])
-    entity_field = f"{entity_name}${field_name}"
-
-    payload = {
-        "project_context": project,
-        "fields": [{field_name: entity_field}],
-        "filters": {
-            "pheno_filters": {
-                "filters": {
-                    entity_field: [{"condition": "in", "values": id_list}],
-                },
-            },
-        },
-    }
-
-    try:
-        resource = viz_info["url"] + "/data/3.0/" + viz_info["dataset"] + "/raw"
-        resp_raw = dxpy.DXHTTPRequest(
-            resource=resource, data=payload, prepend_srv=False,
-        )
-    except Exception as e:
-        raise DXCohortError(
-            f"Vizserver query failed during ID validation: {e}", dx_error=e,
-        ) from e
-
-    discovered = {result[field_name] for result in resp_raw.get("results", [])}
-
-    if discovered != set(id_list):
-        missing = set(id_list) - discovered
-        raise DXCohortError(
-            f"The following IDs not found in dataset '{viz_info['dataset']}': "
-            f"{missing}"
-        )
-
-    return id_list, _conv
-
-
-# ── Filter payload 构建 ─────────────────────────────────────────────────
-
-
-def _generate_pheno_filter(
-    values: list[Any],
-    entity: str,
-    field: str,
-    filters: dict[str, Any],
-    lambda_conv: Callable,
-) -> dict[str, Any]:
-    """构建或修改 pheno_filters，添加 participant ID 的 ``in`` 条件。"""
-    entity_field = f"{entity}${field}"
-    entity_field_filter = {"condition": "in", "values": values}
-
-    if "pheno_filters" not in filters:
-        filters["pheno_filters"] = {"compound": [], "logic": "and"}
-
-    pheno = filters["pheno_filters"]
-
-    if "compound" not in pheno:
-        filters["pheno_filters"] = {"compound": [pheno], "logic": "and"}
-        pheno = filters["pheno_filters"]
-
-    # 尝试合并到已有的 entity$field 过滤器
-    for compound in pheno["compound"]:
-        if "filters" not in compound or entity_field not in compound["filters"]:
-            continue
-        if "logic" in compound and compound["logic"] != "and":
-            raise DXCohortError(
-                "Cannot create cohort: existing filter logic is not 'and'."
-            )
-        primary_filters = []
-        for pf in compound["filters"][entity_field]:
-            if pf["condition"] == "exists":
-                pass
-            elif pf["condition"] == "in":
-                values = sorted(
-                    set(values) & set(reduce(lambda_conv, pf["values"], []))
-                )
-            elif pf["condition"] == "not-in":
-                values = sorted(
-                    set(values) - set(reduce(lambda_conv, pf["values"], []))
-                )
-            else:
-                raise DXCohortError(
-                    f"Cannot create cohort: unsupported filter condition "
-                    f"'{pf['condition']}'."
-                )
-        primary_filters.append(entity_field_filter)
-        compound["filters"][entity_field] = primary_filters
-        return filters
-
-    # 尝试添加到已有的 entity 过滤器（不同字段）
-    for compound in pheno["compound"]:
-        if "entity" not in compound or "name" not in compound["entity"]:
-            continue
-        if compound["entity"]["name"] != entity:
-            continue
-        if "logic" in compound and compound["logic"] != "and":
-            raise DXCohortError(
-                "Cannot create cohort: existing filter logic is not 'and'."
-            )
-        compound["filters"][entity_field] = [entity_field_filter]
-        return filters
-
-    # 尝试添加到已有同 entity 不同字段的过滤器
-    for compound in pheno["compound"]:
-        if "filters" not in compound:
-            continue
-        for other_ef in compound["filters"]:
-            if other_ef.split("$")[0] != entity:
-                continue
-            if "logic" in compound and compound["logic"] != "and":
-                continue
-            compound["filters"][entity_field] = [entity_field_filter]
-            return filters
-
-    # 没有匹配的过滤器，创建新的
-    pheno["compound"].append({
-        "name": "phenotype",
-        "logic": "and",
-        "filters": {entity_field: [entity_field_filter]},
-    })
-
-    return filters
-
-
-def build_cohort_filter_payload(
-    ids: list[Any],
-    entity: str,
-    field: str,
-    project: str,
-    lambda_conv: Callable,
-    base_sql: str | None = None,
-) -> dict[str, Any]:
-    """构建 cohort 的 pheno_filters payload。
-
-    Args:
-        ids: 已校验的 participant ID 列表。
-        entity: 主键实体名。
-        field: 主键字段名。
-        project: 数据集所属项目 ID。
-        lambda_conv: ID 类型转换函数。
-        base_sql: 可选的 base SQL。
-
-    Returns:
-        包含 filters、project_context 的 payload dict。
-    """
-    filter_payload: dict[str, Any] = {
-        "filters": {"logic": "and"},
-        "project_context": project,
-    }
-    filter_payload["filters"] = _generate_pheno_filter(
-        ids, entity, field, filter_payload["filters"], lambda_conv,
-    )
-    if "logic" not in filter_payload["filters"]:
-        filter_payload["filters"]["logic"] = "and"
-    if base_sql is not None:
-        filter_payload["base_sql"] = base_sql
-
-    return filter_payload
 
 
 # ── SQL 生成 ────────────────────────────────────────────────────────────
@@ -339,18 +130,18 @@ def generate_cohort_sql(
         DXCohortError: vizserver 请求失败。
     """
     resource = (
-        viz_info["url"]
-        + "/viz-query/3.0/"
-        + viz_info["dataset"]
-        + "/raw-cohort-query"
+        viz_info["url"] + "/viz-query/3.0/" + viz_info["dataset"] + "/raw-cohort-query"
     )
     try:
         resp = dxpy.DXHTTPRequest(
-            resource=resource, data=filter_payload, prepend_srv=False,
+            resource=resource,
+            data=filter_payload,
+            prepend_srv=False,
         )
     except Exception as e:
         raise DXCohortError(
-            f"Failed to generate cohort SQL: {e}", dx_error=e,
+            f"Failed to generate cohort SQL: {e}",
+            dx_error=e,
         ) from e
 
     return resp["sql"] + ";"
@@ -382,7 +173,7 @@ def build_cohort_record_payload(
         entity_fields: 关联的字段列表（``"entity.field_name"`` 格式）。
 
     Returns:
-        传给 ``new_dxrecord()`` 的完整 payload。
+        传给 ``create_cohort_record()`` 的完整 payload。
     """
     base_sql = viz_info.get("baseSql") or viz_info.get("base_sql")
     combined = viz_info.get("combined")
@@ -407,12 +198,24 @@ def build_cohort_record_payload(
     if combined:
         types.append("CombinedDatabaseQuery")
 
+    # links: dataset + all referenced databases
+    links = [viz_info["dataset"]]
+    for db in viz_info.get("databases", []):
+        if isinstance(db, dict):
+            # {"app_version": {"$dnanexus_link": "database-xxx"}} format
+            for v in db.values():
+                if isinstance(v, dict) and "$dnanexus_link" in v:
+                    links.append(v["$dnanexus_link"])
+        elif isinstance(db, str):
+            links.append(db)
+
     return {
         "name": name,
         "folder": folder,
         "project": project,
         "types": types,
         "details": details,
+        "links": links,
         "close": True,
     }
 
@@ -440,11 +243,29 @@ def create_cohort_record(payload: dict[str, Any]) -> str:
         DXCohortError: 创建失败。
     """
     try:
-        record = new_dxrecord(**payload)
-        return str(record.get_id())
+        links = payload.pop("links", None)
+        input_params: dict[str, Any] = {
+            "project": payload["project"],
+            "name": payload["name"],
+            "types": payload["types"],
+            "details": payload["details"],
+            "hidden": payload.get("hidden", False),
+        }
+        if payload.get("folder"):
+            input_params["folder"] = payload["folder"]
+        if payload.get("properties"):
+            input_params["properties"] = payload["properties"]
+        if payload.get("tags"):
+            input_params["tags"] = payload["tags"]
+        if payload.get("parents"):
+            input_params["parents"] = payload["parents"]
+        if links:
+            input_params["links"] = links
+
+        resp = dxpy.api.record_new(input_params)  # type: ignore
+        return resp["id"]
     except Exception as e:
         raise DXCohortError(
-            f"Failed to create cohort record: {e}", dx_error=e,
+            f"Failed to create cohort record: {e}",
+            dx_error=e,
         ) from e
-
-

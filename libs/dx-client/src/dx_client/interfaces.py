@@ -310,37 +310,29 @@ class IDXClient(ABC):
     def create_cohort(
         self,
         name: str,
+        filters: dict[str, Any],
         *,
-        participant_ids: list[str] | None = None,
-        filters: dict[str, Any] | None = None,
         dataset_ref: str | None = None,
         folder: str = "/",
         description: str = "",
-        validate: bool = True,
         entity_fields: list[str] | None = None,
     ) -> DXCohortInfo:
-        """基于 participant ID 列表或筛选条件在当前项目中创建 cohort。
-
-        ``participant_ids`` 与 ``filters`` 二选一。
+        """基于筛选条件在当前项目中创建 cohort。
 
         Args:
             name: Cohort 名称。
-            participant_ids: 参与者 ID 列表（如 UKB eid）。
-                内部转为 ``in`` 过滤条件。
             filters: 原始 vizserver pheno_filters 结构，支持全部 26 种条件。
             dataset_ref: 源数据集引用 (``"project-xxx:record-yyy"``)。
                 为 None 时自动调用 ``find_dataset()`` 查找。
             folder: 目标文件夹路径。
             description: Cohort 描述。
-            validate: 是否校验 ID 存在于 dataset（默认 True）。
-                仅在 ``participant_ids`` 模式下生效。
             entity_fields: 关联的字段列表（``"entity.field_name"`` 格式）。
 
         Returns:
             DXCohortInfo，包含新创建的 cohort 信息。
 
         Raises:
-            DXCohortError: 参数不合法、创建失败、ID 校验失败等。
+            DXCohortError: 创建失败等。
         """
 
     @abstractmethod
@@ -426,6 +418,29 @@ class IDXClient(ABC):
 
         Raises:
             DXCohortError: vizserver 请求失败。
+        """
+
+    @abstractmethod
+    def download_cohort(
+        self,
+        cohort_id: str,
+        *,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        """下载 cohort 的所有关联字段数据。
+
+        从 cohort record 的 ``details.fields`` 中读取字段列表，
+        然后提取对应数据。
+
+        Args:
+            cohort_id: Cohort record ID。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            包含 cohort 参与者数据的 DataFrame。
+
+        Raises:
+            DXCohortError: cohort 无关联字段或提取失败。
         """
 
     # ── 生命周期 ──────────────────────────────────────────────────────────

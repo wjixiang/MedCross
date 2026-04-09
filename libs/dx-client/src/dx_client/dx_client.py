@@ -23,9 +23,8 @@ import logging
 import os
 import subprocess
 import tempfile
-from functools import reduce
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 import dxpy
 import pandas as pd
@@ -38,8 +37,8 @@ from .dx_exceptions import (
     DXAPIError,
     DXAuthError,
     DXClientError,
-    DXConfigError,
     DXCohortError,
+    DXConfigError,
     DXDatabaseNotFoundError,
     DXFileNotFoundError,
 )
@@ -915,29 +914,18 @@ class DXClient(IDXClient):
     def create_cohort(
         self,
         name: str,
+        filters: dict[str, Any],
         *,
-        participant_ids: list[str] | None = None,
-        filters: dict[str, Any] | None = None,
         dataset_ref: str | None = None,
         folder: str = "/",
         description: str = "",
-        validate: bool = True,
         entity_fields: list[str] | None = None,
     ) -> DXCohortInfo:
-        """基于 participant ID 列表或筛选条件在当前项目中创建 cohort。"""
+        """基于筛选条件在当前项目中创建 cohort。"""
         from . import cohort as cohort_mod
 
         self._ensure_connected()
         project_id = self._require_project()
-
-        if participant_ids is not None and filters is not None:
-            raise DXCohortError(
-                "Provide exactly one of 'participant_ids' or 'filters', not both."
-            )
-        if participant_ids is None and filters is None:
-            raise DXCohortError(
-                "Either 'participant_ids' or 'filters' must be provided."
-            )
 
         # 1. 解析 dataset 引用
         if dataset_ref is None:
@@ -952,62 +940,12 @@ class DXClient(IDXClient):
         base_sql = viz_info.get("baseSql") or viz_info.get("base_sql")
 
         # 3. 构建 filter payload
-        if participant_ids is not None:
-            if not participant_ids:
-                raise DXCohortError("participant_ids must not be empty.")
-
-            descriptor = cohort_mod.get_dataset_descriptor(
-                dataset_record_id, dataset_project
-            )
-
-            gpk = descriptor["model"]["global_primary_key"]
-            entity_name = gpk["entity"]
-            field_name = gpk["field"]
-
-            if validate:
-                id_list, _conv = cohort_mod.validate_participant_ids(
-                    descriptor,
-                    dataset_project,
-                    viz_info,
-                    participant_ids,
-                )
-            else:
-                field_mapping = descriptor["model"]["entities"][entity_name]["fields"][
-                    field_name
-                ]["mapping"]
-                gpk_type = field_mapping["column_sql_type"]
-                if gpk_type in ("integer", "bigint"):
-
-                    def _conv(a: list, b: str) -> list:
-                        return a + [int(b)]
-                elif gpk_type in ("float", "double"):
-
-                    def _conv(a: list, b: str) -> list:
-                        return a + [float(b)]
-                else:
-
-                    def _conv(a: list, b: str) -> list:
-                        return a + [str(b)]
-
-                id_list = reduce(_conv, participant_ids, [])
-
-            filter_payload = cohort_mod.build_cohort_filter_payload(
-                id_list,
-                entity_name,
-                field_name,
-                dataset_project,
-                _conv,
-                base_sql,
-            )
-            participant_count = len(id_list)
-        else:
-            filter_payload: dict[str, Any] = {
-                "filters": filters,
-                "project_context": dataset_project,
-            }
-            if base_sql is not None:
-                filter_payload["base_sql"] = base_sql
-            participant_count = 0
+        filter_payload: dict[str, Any] = {
+            "filters": filters,
+            "project_context": dataset_project,
+        }
+        if base_sql is not None:
+            filter_payload["base_sql"] = base_sql
 
         # 4. 生成 SQL
         sql = cohort_mod.generate_cohort_sql(viz_info, filter_payload)
@@ -1026,10 +964,9 @@ class DXClient(IDXClient):
         cohort_id = cohort_mod.create_cohort_record(record_payload)
 
         logger.info(
-            "Created cohort '%s' (%s) with %d participants in project '%s'",
+            "Created cohort '%s' (%s) in project '%s'",
             name,
             cohort_id,
-            participant_count,
             project_id,
         )
 
@@ -1039,7 +976,6 @@ class DXClient(IDXClient):
             project=project_id,
             folder=folder,
             description=description,
-            participant_count=participant_count,
             entity_fields=entity_fields or [],
         )
 
@@ -1048,7 +984,7 @@ class DXClient(IDXClient):
         name_pattern: str | None = None,
         limit: int = 100,
         *,
-        refresh: bool = False,
+        refresh: bool = True,
     ) -> list[DXRecordInfo]:
         """列出当前项目中的 cohort record。
 
@@ -1244,6 +1180,93 @@ class DXClient(IDXClient):
             )
             return df
 
+    def download_cohort(
+        self,
+        cohort_id: str,
+        *,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        """下载 cohort 的所有关联字段数据。
+
+        从 cohort record 的 ``details.fields`` 中读取字段列表，通过 vizserver API 提取数据。
+        不使用 CLI subprocess，避免大量字段时超过 OS 参数长度限制。
+        """
+        from . import cohort as cohort_mod
+
+        self._ensure_connected()
+        project_id = self._require_project()
+
+        # 从 cohort record 读取 details.fields
+        try:
+            desc: dict[str, Any] = dxpy.describe(  # type: ignore[assignment]
+                cohort_id,
+                fields={"properties", "details"},
+                default_fields=True,
+            )
+        except Exception as e:
+            raise DXCohortError(
+                f"Failed to describe cohort '{cohort_id}': {e}",
+                dx_error=e,
+            ) from e
+
+        details: dict[str, Any] = desc.get("details") or {}
+        entity_fields: list[str] = details.get("fields", [])
+        entity_fields = convert_fields(entity_fields)
+
+        if not entity_fields:
+            raise DXCohortError(
+                f"Cohort '{cohort_id}' has no associated fields in details.fields.",
+            )
+
+        cache_key = f"cohort_data:{cohort_id}:all"
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        try:
+            viz_info = cohort_mod.get_visualize_info(cohort_id, project_id)
+        except Exception as e:
+            raise DXCohortError(
+                f"Failed to get visualize info for cohort '{cohort_id}': {e}",
+                dx_error=e,
+            ) from e
+
+        payload: dict[str, Any] = {
+            "project_context": project_id,
+            "fields": [{f: f.replace(".", "$", 1)} for f in entity_fields],
+        }
+        if viz_info.get("baseSql"):
+            payload["base_sql"] = viz_info["baseSql"]
+        if viz_info.get("filters"):
+            payload["filters"] = viz_info["filters"]
+
+        resource = (
+            viz_info["url"] + "/data/3.0/" + viz_info["dataset"] + "/raw"
+        )
+        try:
+            resp = dxpy.DXHTTPRequest(
+                resource=resource, data=payload, prepend_srv=False,
+            )
+        except Exception as e:
+            raise DXCohortError(
+                f"Failed to query cohort data: {e}",
+                dx_error=e,
+            ) from e
+
+        results = resp.get("results", [])
+        df = pd.DataFrame(results)
+        self._cache.set(cache_key, df)
+        logger.info(
+            "Downloaded %d rows, %d fields from cohort '%s'",
+            len(df),
+            len(entity_fields),
+            cohort_id,
+        )
+        return df
+
     # ── 内部工具 ──────────────────────────────────────────────────────────
 
     def _make_subprocess_env(self) -> dict[str, str]:
@@ -1258,3 +1281,15 @@ class DXClient(IDXClient):
         if self._current_project_id:
             env["DX_PROJECT_CONTEXT_ID"] = self._current_project_id
         return env
+
+
+def convert_fields(fields: List[str]) -> List[str]:
+    # Convert "$" into "."
+    r1 = [i.replace("$", ".", 1) for i in fields]
+
+    # Remove content after ";"
+    r2 = [i.split(";")[0] for i in r1]
+
+    # Convert to lowercase
+    r3 = [i.lower() for i in r2]
+    return r3

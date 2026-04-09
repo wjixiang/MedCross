@@ -8,7 +8,6 @@ from ukb_mcp.api.deps import get_dx_client
 from ukb_mcp.domain.cohort.models import (
     CohortCreateRequest,
     CohortDetail,
-    CohortFilter,
     CohortInfo,
     CohortListItem,
     ExtractFieldsRequest,
@@ -21,15 +20,6 @@ router = APIRouter(prefix="/cohort", tags=["cohort"])
 
 def get_cohort_service(dx_client: IDXClient = Depends(get_dx_client)) -> CohortService:
     return CohortService(dx_client)
-
-
-@router.post("/filter")
-def filter_cohort(
-    filters: CohortFilter,
-    service: CohortService = Depends(get_cohort_service),
-) -> list[dict]:
-    """按条件筛选参与者构建队列。"""
-    return service.filter(filters.biomarker_ranges, filters.limit, filters.offset)
 
 
 @router.get("/", response_model=list[CohortListItem])
@@ -78,15 +68,13 @@ def create_cohort(
     req: CohortCreateRequest,
     service: CohortService = Depends(get_cohort_service),
 ) -> CohortInfo:
-    """基于参与者 ID 列表或筛选条件创建队列。"""
+    """基于筛选条件创建队列。"""
     info = service.create_cohort(
         name=req.name,
-        participant_ids=req.participant_ids,
         filters=req.filters,
         dataset_ref=req.dataset_ref,
         folder=req.folder,
         description=req.description,
-        validate=req.validate_ids,
         entity_fields=req.entity_fields or None,
     )
     return CohortInfo(

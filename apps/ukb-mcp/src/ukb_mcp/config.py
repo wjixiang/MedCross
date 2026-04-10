@@ -9,6 +9,7 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 _BASE_DIR = Path(__file__).resolve().parent.parent.parent  # apps/ukb-mcp/
@@ -41,6 +42,10 @@ class Settings(BaseSettings):
     )
     server_host: str = Field(default="0.0.0.0", description="服务监听地址。")
     server_port: int = Field(default=8000, description="服务监听端口。")
+    db_path: str = Field(
+        default=".cache/db.duckdb",
+        alias="DB_PATH",
+    )
     cache_db_path: str = Field(
         default=".cache/dx_cache.duckdb",
         alias="CACHE_DB_PATH",

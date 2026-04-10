@@ -1,4 +1,5 @@
 """UK Biobank 数据服务 — FastAPI 入口。"""
+
 from __future__ import annotations
 
 import logging
@@ -21,7 +22,9 @@ class CacheStatusMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         dx_client: IDXClient | None = getattr(
-            request.app.state, "dx_client", None,
+            request.app.state,
+            "dx_client",
+            None,
         )
         if dx_client is not None:
             response.headers["X-Cache-Status"] = dx_client.cache_status.value

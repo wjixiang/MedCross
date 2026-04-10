@@ -3704,6 +3704,7 @@ name = "ukb-mcp"
 version = "0.1.0"
 source = { editable = "apps/ukb-mcp" }
 dependencies = [
+    { name = "duckdb" },
     { name = "dx-client" },
     { name = "fastapi", extra = ["standard"] },
     { name = "mcp", extra = ["cli"] },
@@ -3715,6 +3716,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "duckdb", specifier = "==1.4.4" },
     { name = "dx-client", editable = "libs/dx-client" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.135.3" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.27.0" },

@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.7.0",
     "pytest>=9.0.2",
     "python-dotenv>=1.2.2",
+    "duckdb==1.4.4",
 ]
 
 [project.scripts]

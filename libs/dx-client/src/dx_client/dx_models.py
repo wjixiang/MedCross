@@ -191,3 +191,41 @@ class DXDatabaseClusterInfo(BaseModel):
     visibility: str = "visible"
     sponsored: bool = False
     hidden: bool = False
+
+
+class DXJobInfo(BaseModel):
+    """DNAnexus job 描述。"""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str = ""
+    name: str = ""
+    state: str = ""
+    project: str = ""
+    folder: str = ""
+    created: int = 0
+    modified: int = 0
+    started_running: int = Field(default=0, alias="startedRunning")
+    stopped_running: int = Field(default=0, alias="stoppedRunning")
+    executable_name: str = Field(default="", alias="executableName")
+    launched_by: str = Field(default="", alias="launchedBy")
+    root_execution: str = Field(default="", alias="rootExecution")
+    parent_job: str = Field(default="", alias="parentJob")
+    origin_job: str = Field(default="", alias="originJob")
+    function: str = ""
+    region: str = ""
+    tags: list[str] = Field(default_factory=list)
+    properties: dict[str, Any] = Field(default_factory=dict)
+    run_input: dict[str, Any] = Field(default_factory=dict, alias="runInput")
+    input: dict[str, Any] = Field(default_factory=dict)
+    output: dict[str, Any] = Field(default_factory=dict)
+    failure_reason: str = Field(default="", alias="failureReason")
+    failure_message: str = Field(default="", alias="failureMessage")
+    state_transitions: list[dict[str, Any]] = Field(
+        default_factory=list, alias="stateTransitions",
+    )
+    app: str = ""
+    applet: str = ""
+    analysis: str = ""
+    bill_to: str = Field(default="", alias="billTo")
+    total_price: float = Field(default=0.0, alias="totalPrice")

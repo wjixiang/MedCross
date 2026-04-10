@@ -10,6 +10,7 @@ from .dx_exceptions import (
     DXCohortError,
     DXDatabaseNotFoundError,
     DXFileNotFoundError,
+    DXJobError,
     DXProjectNotFoundError,
 )
 from .dx_models import (
@@ -21,6 +22,7 @@ from .dx_models import (
     DXDatabaseTable,
     DXDataObject,
     DXFileInfo,
+    DXJobInfo,
     DXProject,
     DXRecordInfo,
 )
@@ -47,6 +49,8 @@ __all__ = [
     "DXCohortError",
     "DXDatabaseNotFoundError",
     "DXFileNotFoundError",
+    "DXJobError",
+    "DXJobInfo",
     "DXProjectNotFoundError",
     "default_dx_client_config",
 ]

@@ -41,6 +41,7 @@ from .dx_exceptions import (
     DXConfigError,
     DXDatabaseNotFoundError,
     DXFileNotFoundError,
+    DXJobError,
 )
 from .dx_models import (
     DXClientConfig,
@@ -50,6 +51,7 @@ from .dx_models import (
     DXDatabaseTable,
     DXDataObject,
     DXFileInfo,
+    DXJobInfo,
     DXProject,
     DXRecordInfo,
 )
@@ -1266,6 +1268,142 @@ class DXClient(IDXClient):
             cohort_id,
         )
         return df
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  Job 操作
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def list_jobs(
+        self,
+        state: str | None = None,
+        name_pattern: str | None = None,
+        *,
+        created_after: int | None = None,
+        created_before: int | None = None,
+        include_subjobs: bool = False,
+        limit: int = 100,
+        refresh: bool = False,
+    ) -> list[DXJobInfo]:
+        """列出当前项目中的 job。"""
+        self._ensure_connected()
+        project = self._require_project()
+        cache_key = (
+            f"jobs:{project}:{state or ''}:{name_pattern or ''}"
+            f":{created_after or ''}:{created_before or ''}"
+            f":{include_subjobs}:{limit}"
+        )
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+        try:
+            kwargs: dict[str, Any] = {
+                "project": project,
+                "describe": True,
+                "limit": limit,
+            }
+            if state:
+                kwargs["state"] = state
+            if name_pattern:
+                kwargs["name"] = name_pattern
+                kwargs["name_mode"] = self._resolve_name_mode(name_pattern)
+            if created_after is not None:
+                kwargs["created_after"] = created_after
+            if created_before is not None:
+                kwargs["created_before"] = created_before
+            if include_subjobs:
+                kwargs["include_subjobs"] = True
+            result = [
+                DXJobInfo.model_validate(r["describe"])
+                for r in dxpy.find_jobs(**kwargs)
+            ]
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, "Failed to list jobs")
+            raise
+
+    def describe_job(
+        self,
+        job_id: str,
+        *,
+        refresh: bool = False,
+    ) -> DXJobInfo:
+        """获取 job 完整描述。"""
+        self._ensure_connected()
+        cache_key = f"job:{job_id}"
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+        try:
+            job = dxpy.DXJob(job_id)
+            desc = job.describe()
+            result = DXJobInfo.model_validate(desc)
+            self._cache.set(cache_key, result)
+            return result
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to describe job '{job_id}'")
+            raise
+
+    def terminate_job(self, job_id: str) -> str:
+        """终止指定 job。"""
+        self._ensure_connected()
+        try:
+            job = dxpy.DXJob(job_id)
+            job.terminate()
+            self._cache.delete(f"job:{job_id}")
+            logger.info("Terminated job '%s'", job_id)
+            return job_id
+        except DxPyDXError as e:
+            self._handle_dx_error(e, f"Failed to terminate job '{job_id}'")
+            raise
+
+    def wait_on_job(
+        self,
+        job_id: str,
+        *,
+        interval: float = 2.0,
+        timeout: float | None = None,
+    ) -> DXJobInfo:
+        """等待 job 到达终态，返回最终描述。"""
+        import time
+
+        self._ensure_connected()
+        start = time.monotonic()
+        try:
+            job = dxpy.DXJob(job_id)
+            kwargs: dict[str, Any] = {"interval": interval}
+            if timeout is not None:
+                kwargs["timeout"] = timeout
+            job.wait_on_done(**kwargs)
+        except DxPyDXError as e:
+            err_str = str(e).lower()
+            if "timed out" in err_str or "timeout" in err_str:
+                raise DXJobError(
+                    f"Timed out waiting for job '{job_id}' (timeout={timeout}s)",
+                    dx_error=e,
+                ) from e
+            logger.warning("wait_on_done raised for job '%s': %s", job_id, e)
+        except Exception as e:
+            raise DXJobError(
+                f"Error waiting for job '{job_id}': {e}",
+                dx_error=e,
+            ) from e
+
+        final = self.describe_job(job_id, refresh=True)
+        elapsed = time.monotonic() - start
+        logger.info(
+            "Job '%s' reached terminal state '%s' in %.1fs",
+            job_id,
+            final.state,
+            elapsed,
+        )
+        return final
 
     # ── 内部工具 ──────────────────────────────────────────────────────────
 

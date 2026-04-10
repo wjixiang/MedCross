@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         DXDatabaseInfo,
         DXDatabaseTable,
         DXFileInfo,
+        DXJobInfo,
         DXProject,
         DXRecordInfo,
     )
@@ -441,6 +442,90 @@ class IDXClient(ABC):
 
         Raises:
             DXCohortError: cohort 无关联字段或提取失败。
+        """
+
+    # ── Job 操作 ──────────────────────────────────────────────────────
+
+    @abstractmethod
+    def list_jobs(
+        self,
+        state: str | None = None,
+        name_pattern: str | None = None,
+        *,
+        created_after: int | None = None,
+        created_before: int | None = None,
+        include_subjobs: bool = False,
+        limit: int = 100,
+        refresh: bool = False,
+    ) -> list[DXJobInfo]:
+        """列出当前项目中的 job。
+
+        Args:
+            state: 过滤 job 状态 (e.g. "running", "done", "failed", "terminated")。
+            name_pattern: 名称匹配模式 (glob 或 regexp)。
+            created_after: 创建时间下界 (Unix 毫秒时间戳)。
+            created_before: 创建时间上界 (Unix 毫秒时间戳)。
+            include_subjobs: 是否包含子 job。
+            limit: 返回数量上限。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            DXJobInfo 列表。
+        """
+
+    @abstractmethod
+    def describe_job(
+        self, job_id: str, *, refresh: bool = False,
+    ) -> DXJobInfo:
+        """获取 job 完整描述。
+
+        Args:
+            job_id: Job ID (job-xxxx)。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            DXJobInfo 实例。
+
+        Raises:
+            DXFileNotFoundError: job 不存在或无权限。
+        """
+
+    @abstractmethod
+    def terminate_job(self, job_id: str) -> str:
+        """终止指定 job。
+
+        Args:
+            job_id: Job ID (job-xxxx)。
+
+        Returns:
+            终止的 job ID。
+
+        Raises:
+            DXJobError: 终止失败。
+        """
+
+    @abstractmethod
+    def wait_on_job(
+        self,
+        job_id: str,
+        *,
+        interval: float = 2.0,
+        timeout: float | None = None,
+    ) -> DXJobInfo:
+        """等待 job 到达终态，返回最终描述。
+
+        阻塞当前线程轮询直到 job 进入 done/failed/terminated 状态。
+
+        Args:
+            job_id: Job ID (job-xxxx)。
+            interval: 轮询间隔（秒）。
+            timeout: 最大等待时间（秒）。为 None 时无限等待。
+
+        Returns:
+            终态 DXJobInfo 实例。
+
+        Raises:
+            DXJobError: 等待超时。
         """
 
     # ── 生命周期 ──────────────────────────────────────────────────────────

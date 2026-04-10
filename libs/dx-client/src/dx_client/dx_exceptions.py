@@ -48,5 +48,9 @@ class DXCohortError(DXClientError):
     """Cohort 创建/操作失败。"""
 
 
+class DXJobError(DXClientError):
+    """Job 操作失败（等待超时等）。"""
+
+
 class DXConfigError(DXClientError):
     """客户端配置无效。"""

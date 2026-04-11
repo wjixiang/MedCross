@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from unittest.mock import MagicMock
 
 import pandas as pd
@@ -74,3 +72,7 @@ def test_sql_query(service):
     service.sync_field_dict()
     result = service.query_fields("TRUE")
     print(result)
+
+
+def test_sql_error_throw(service):
+    service.sync_field_dict()

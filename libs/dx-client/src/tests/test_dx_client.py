@@ -217,46 +217,6 @@ def test_get_database_schema(client: DXClient) -> None:
         report("get_database_schema()", "fail", str(e))
 
 
-def test_query_database(client: DXClient) -> None:
-    try:
-        db = client.find_database()
-    except DXDatabaseNotFoundError:
-        report("query_database()", "skip", "no database found")
-        return
-    except Exception as e:
-        report("query_database()", "fail", f"find_database: {e}")
-        return
-
-    try:
-        df = client.query_database(db.id, ["participant.eid", "participant.p31"])
-        report("query_database()", "pass", f"{len(df)} rows x {len(df.columns)} cols")
-        print(f"         columns: {list(df.columns)}")
-        print(df.head(2).to_string(index=False))
-    except Exception as e:
-        report("query_database()", "fail", str(e))
-
-
-def test_download_database_query(client: DXClient) -> None:
-    try:
-        db = client.find_database()
-    except DXDatabaseNotFoundError:
-        report("download_database_query()", "skip", "no database found")
-        return
-    except Exception as e:
-        report("download_database_query()", "fail", f"find_database: {e}")
-        return
-
-    import tempfile
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out = str(Path(tmpdir) / "test_query.csv")
-            path = client.download_database_query(db.id, out, ["participant.eid", "participant.p31"])
-            size = path.stat().st_size
-            report("download_database_query()", "pass", f"-> {path} ({size} bytes)")
-    except Exception as e:
-        report("download_database_query()", "fail", str(e))
-
-
 def test_find_dataset(client: DXClient) -> None:
     try:
         ds_id, ds_ref = client.find_dataset()
@@ -298,22 +258,6 @@ def test_list_fields(client: DXClient) -> None:
         print(df.to_string(index=False))
     except Exception as e:
         report("list_fields(name_pattern=p31)", "fail", str(e))
-
-
-def test_extract_fields(client: DXClient) -> None:
-    try:
-        _, ref = client.find_dataset()
-    except Exception as e:
-        report("extract_fields()", "skip", f"find_dataset: {e}")
-        return
-
-    try:
-        df = client.extract_fields(["participant.eid", "participant.p31"], dataset_ref=ref)
-        report("extract_fields()", "pass", f"{len(df)} rows x {len(df.columns)} cols")
-        print(f"         columns: {list(df.columns)}")
-        print(df.head(2).to_string(index=False))
-    except Exception as e:
-        report("extract_fields()", "fail", str(e))
 
 
 def test_disconnect(client: DXClient) -> None:
@@ -422,12 +366,9 @@ def main() -> None:
         test_find_database,
         test_describe_database_cluster,
         test_get_database_schema,
-        test_query_database,
-        test_download_database_query,
         test_find_dataset,
         test_get_data_dictionary,
         test_list_fields,
-        test_extract_fields,
         test_create_cohort,
         test_disconnect,
     ]

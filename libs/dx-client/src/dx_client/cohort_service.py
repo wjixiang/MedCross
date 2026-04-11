@@ -295,7 +295,7 @@ class CohortService(ICohortService):
             filter_payload["base_sql"] = base_sql
 
         # 4. 生成 SQL
-        sql = generate_cohort_sql(viz_info, filter_payload, self._vizserver)
+        sql = self._vizserver.generate_cohort_sql(viz_info, filter_payload)
 
         # 5. 创建 cohort record
         record_payload = build_cohort_record_payload(

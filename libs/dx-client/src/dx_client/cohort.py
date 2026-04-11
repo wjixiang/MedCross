@@ -22,15 +22,23 @@ logger = logging.getLogger(__name__)
 # ── Vizserver 交互 ──────────────────────────────────────────────────────
 
 
-def get_visualize_info(record_id: str, project: str) -> dict[str, Any]:
+def get_visualize_info(
+    record_id: str,
+    project: str,
+    *,
+    cohort_browser: bool = False,
+) -> dict[str, Any]:
     """调用 ``/record-xxx/visualize`` 获取 vizserver 连接信息。
 
     Args:
         record_id: Dataset 或 CohortBrowser 的 record ID。
         project: 所属项目 ID。
+        cohort_browser: 为 True 时返回 Cohort 特有的 filters 和 baseSql。
+                      Dataset 应传 False，CohortBrowser 应传 True。
 
     Returns:
         vizserver 响应 dict，包含 url、dataset、databases、schema 等字段。
+        当 cohort_browser=True 时额外包含 baseSql 和 filters 字段。
 
     Raises:
         DXCohortError: record 无效、版本不支持或权限不足。
@@ -38,7 +46,7 @@ def get_visualize_info(record_id: str, project: str) -> dict[str, Any]:
     try:
         resp = dxpy.DXHTTPRequest(
             "/%s/visualize" % record_id,
-            {"project": project, "cohortBrowser": False},
+            {"project": project, "cohortBrowser": cohort_browser},
         )
     except Exception as e:
         raise DXCohortError(

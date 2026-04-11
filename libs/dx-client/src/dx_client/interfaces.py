@@ -191,50 +191,6 @@ class IDXClient(ABC):
             DXDatabaseTable 列表。
         """
 
-    @abstractmethod
-    def query_database(
-        self,
-        database_id: str,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        """从数据库关联的数据集中提取指定字段并返回 DataFrame。
-
-        Args:
-            database_id: DNAnexus database ID。
-            entity_fields: ``"entity.field_name"`` 格式的字段列表。
-            dataset_ref: 数据集引用。为 None 时自动查找。
-            refresh: 为 True 时跳过缓存，强制从云端获取。
-
-        Returns:
-            包含查询结果的 pandas DataFrame。
-        """
-
-    @abstractmethod
-    def download_database_query(
-        self,
-        database_id: str,
-        output_path: str,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> Path:
-        """从数据库关联的数据集中提取指定字段并下载为 CSV 文件。
-
-        Args:
-            database_id: DNAnexus database ID。
-            output_path: 本地 CSV 文件保存路径。
-            entity_fields: ``"entity.field_name"`` 格式的字段列表。
-            dataset_ref: 数据集引用。为 None 时自动查找。
-            refresh: 为 True 时跳过缓存，强制从云端获取。
-
-        Returns:
-            下载文件的 Path 对象。
-        """
-
     # ── 数据集操作 (UKB-RAP) ──────────────────────────────────────────────
 
     @abstractmethod
@@ -284,25 +240,6 @@ class IDXClient(ABC):
 
         Returns:
             DataFrame，包含 entity / name / type / title 四列。
-        """
-
-    @abstractmethod
-    def extract_fields(
-        self,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        """从数据集中提取指定字段。
-
-        Args:
-            entity_fields: ``"entity.field_name"`` 格式的字段列表。
-            dataset_ref: 数据集引用。为 None 时自动查找。
-            refresh: 为 True 时跳过缓存，强制从云端获取。
-
-        Returns:
-            DataFrame，包含 eid 列和请求的字段列。
         """
 
     @abstractmethod

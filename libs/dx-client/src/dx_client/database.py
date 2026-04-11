@@ -28,8 +28,7 @@ logger = logging.getLogger(__name__)
 class IDatabaseContext(Protocol):
     """DatabaseService 对客户端的窄依赖协议。
 
-    ``query_database`` 需要跨域调用 ``find_dataset`` 和 ``extract_fields``，
-    通过此协议解耦，不直接依赖 DataDictionaryService。
+    提供 find_dataset 方法供 DatabaseService 跨域调用。
     """
 
     def find_dataset(
@@ -38,14 +37,6 @@ class IDatabaseContext(Protocol):
         *,
         refresh: bool = False,
     ) -> tuple[str, str]: ...
-
-    def extract_fields(
-        self,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame: ...
 
 
 class IDatabaseService(ABC):
@@ -97,35 +88,6 @@ class IDatabaseService(ABC):
         UKB-RAP 的 database 为 dnax 类型（Parquet 存储），无 SQL schema。
         本方法通过 ``database_list_folder`` 浏览顶层目录结构来列出数据表。
         """
-
-    @abstractmethod
-    def query_database(
-        self,
-        project_id: str,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        """从数据库关联的数据集中提取指定字段并返回 DataFrame。
-
-        Args:
-            entity_fields: ``"entity.field_name"`` 格式的字段列表。
-            dataset_ref: 数据集引用。为 None 时自动查找。
-            refresh: 为 True 时跳过缓存，强制从云端获取。
-        """
-
-    @abstractmethod
-    def download_database_query(
-        self,
-        project_id: str,
-        output_path: str,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> Path:
-        """从数据库关联的数据集中提取指定字段并下载为 CSV 文件。"""
 
 
 class DatabaseService(IDatabaseService):
@@ -305,63 +267,3 @@ class DatabaseService(IDatabaseService):
 
         self._cache.set(cache_key, tables)
         return tables
-
-    def query_database(
-        self,
-        project_id: str,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        if not entity_fields:
-            return pd.DataFrame()
-
-        database_id = self._ensure_database_id(project_id, refresh=refresh)
-        cache_key = f"db_query:{database_id}:{','.join(sorted(entity_fields))}"
-        if refresh:
-            self._cache.last_status = CacheStatus.SKIP
-        else:
-            cached = self._cache.get(cache_key)
-            if cached is not None:
-                return cached
-
-        if dataset_ref is None:
-            _, dataset_ref = self._context.find_dataset()
-
-        logger.info(
-            "Extracting %d fields from database '%s' via dataset '%s'",
-            len(entity_fields),
-            database_id,
-            dataset_ref,
-        )
-        result = self._context.extract_fields(
-            entity_fields, dataset_ref=dataset_ref, refresh=refresh
-        )
-        self._cache.set(cache_key, result)
-        return result
-
-    def download_database_query(
-        self,
-        project_id: str,
-        output_path: str,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> Path:
-        df = self.query_database(
-            project_id, entity_fields, dataset_ref, refresh=refresh
-        )
-
-        path = Path(output_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(path, index=False)
-
-        logger.info(
-            "Downloaded %d rows (%d fields) to '%s'",
-            len(df),
-            len(entity_fields),
-            path,
-        )
-        return path

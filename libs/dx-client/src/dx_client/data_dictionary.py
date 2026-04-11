@@ -109,27 +109,6 @@ class IDataDictionaryService(ABC):
             按条件筛选后的 DataFrame。
         """
 
-    @abstractmethod
-    def extract_fields(
-        self,
-        project_id: str,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        """通过 vizserver API 提取指定字段数据。
-
-        Args:
-            project_id: 项目上下文 ID。
-            entity_fields: ``"entity.field_name"`` 格式的字段列表。
-            dataset_ref: 数据集引用。为 None 时自动查找。
-            refresh: 为 True 时跳过缓存。
-
-        Returns:
-            包含 eid 列和请求字段的 DataFrame。
-        """
-
 
 class DataDictionaryService(IDataDictionaryService):
     """数据字典查询操作的默认实现。
@@ -324,49 +303,4 @@ class DataDictionaryService(IDataDictionaryService):
 
         result = df.reset_index(drop=True)
         logger.info("list_fields: %d fields matched", len(result))
-        return result
-
-    def extract_fields(
-        self,
-        project_id: str,
-        entity_fields: list[str],
-        dataset_ref: str | None = None,
-        *,
-        refresh: bool = False,
-    ) -> pd.DataFrame:
-        """通过 vizserver API 提取指定字段数据（纯 SDK，无 CLI 依赖）。"""
-        if not entity_fields:
-            return pd.DataFrame()
-
-        cache_key = f"extract:{dataset_ref or '_'}:{','.join(sorted(entity_fields))}"
-        if refresh:
-            self._cache.last_status = CacheStatus.SKIP
-        else:
-            cached = self._cache.get(cache_key)
-            if cached is not None:
-                return cached
-
-        if dataset_ref is None:
-            dataset_id, dataset_ref = self.find_dataset(
-                project_id, refresh=refresh,
-            )
-        else:
-            dataset_id = dataset_ref.split(":")[-1]
-
-        try:
-            viz_info = self._vizserver.get_visualize_info(dataset_id, project_id)
-        except Exception as e:
-            raise DXAPIError(
-                f"Failed to get visualize info for '{dataset_id}': {e}",
-                dx_error=e,
-            ) from e
-
-        payload: dict[str, Any] = {
-            "project_context": project_id,
-            "fields": [{f: "$".join(f.split("."))} for f in entity_fields],
-        }
-
-        results = self._vizserver.query_raw_data(viz_info, payload)
-        result = pd.DataFrame(results)
-        self._cache.set(cache_key, result)
         return result

@@ -67,4 +67,10 @@ def service(db_path, mock_dx_client):
 def test_sync_field_dict(service):
     service.sync_field_dict()
     df = service.list_fields()
-    print(df)
+    assert df.shape == (3, 16)
+
+
+def test_sql_query(service):
+    service.sync_field_dict()
+    result = service.query_fields("TRUE")
+    print(result)

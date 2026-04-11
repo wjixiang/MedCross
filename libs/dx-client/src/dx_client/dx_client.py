@@ -909,6 +909,90 @@ class DXClient(IDXClient):
             self._cache.set(cache_key, result)
             return result
 
+    def generate_dataset_sql(
+        self,
+        entity_fields: list[str],
+        dataset_ref: str | None = None,
+        *,
+        refresh: bool = False,
+    ) -> str:
+        """生成数据集的 SQL 查询字符串。
+
+        调用 vizserver /viz-query/3.0/{dataset}/raw-query 端点生成完整 SQL。
+        不需要实际执行查询，直接获取生成的 SQL 字符串。
+        """
+        from . import cohort as cohort_mod
+
+        self._ensure_connected()
+        project_id = self._require_project()
+
+        # 解析 dataset 引用
+        if dataset_ref is None:
+            _, dataset_ref = self.find_dataset()
+
+        parts = dataset_ref.split(":")
+        dataset_record_id = parts[-1]
+        dataset_project = parts[0] if len(parts) > 1 else project_id
+
+        # 获取 vizserver 信息
+        try:
+            viz_info = cohort_mod.get_visualize_info(dataset_record_id, dataset_project)
+        except Exception as e:
+            raise DXAPIError(
+                f"Failed to get visualize info for dataset '{dataset_record_id}': {e}",
+                dx_error=e,
+            ) from e
+
+        # 构建 payload
+        # 字段格式：key 使用字段名（如 "p3_i0"），value 使用完整路径（如 "participant$p3_i0"）
+        # 对于 "eid" 这类无 entity 前缀的字段，默认视为 participant 实体
+        def _make_field_entry(f: str) -> dict[str, str]:
+            parts = f.split(".")
+            field_name = parts[-1]  # key: 字段名
+            if len(parts) == 1:
+                # 无 entity 前缀，默认 participant 实体
+                entity_path = f"participant${field_name}"
+            else:
+                entity_path = "$".join(parts)
+            return {field_name: entity_path}
+
+        base_sql = viz_info.get("baseSql") or viz_info.get("base_sql")
+        payload: dict[str, Any] = {
+            "project_context": dataset_project,
+            "fields": [_make_field_entry(f) for f in entity_fields],
+        }
+        if base_sql is not None:
+            payload["base_sql"] = base_sql
+
+        # 调用 vizserver 生成 SQL
+        resource = (
+            viz_info["url"]
+            + "/viz-query/3.0/"
+            + viz_info["dataset"]
+            + "/raw-query"
+        )
+        try:
+            resp = dxpy.DXHTTPRequest(
+                resource=resource, data=payload, prepend_srv=False,
+            )
+        except Exception as e:
+            raise DXAPIError(
+                f"Failed to generate SQL for dataset '{viz_info['dataset']}': {e}",
+                dx_error=e,
+            ) from e
+
+        if "error" in resp:
+            raise DXAPIError(
+                f"Vizserver error: {resp['error']}",
+            )
+
+        logger.info(
+            "Generated SQL for %d fields from dataset '%s'",
+            len(entity_fields),
+            dataset_ref,
+        )
+        return resp["sql"]
+
     # ═══════════════════════════════════════════════════════════════════════
     #  Cohort 操作
     # ═══════════════════════════════════════════════════════════════════════
@@ -1265,6 +1349,188 @@ class DXClient(IDXClient):
             "Downloaded %d rows, %d fields from cohort '%s'",
             len(df),
             len(entity_fields),
+            cohort_id,
+        )
+        return df
+
+    def get_cohort_viz_info(
+        self,
+        cohort_id: str,
+        *,
+        refresh: bool = False,
+    ) -> dict[str, Any]:
+        """获取 cohort 的 vizserver viz_info。
+
+        包含 url、dataset、recordTypes、baseSql、filters 等字段，
+        用于生成 SQL 或预览数据。
+
+        Args:
+            cohort_id: Cohort record ID (record-xxxx)。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            viz_info dict，包含 url、dataset、filters、baseSql 等字段。
+        """
+        from . import cohort as cohort_mod
+
+        self._ensure_connected()
+        project = self._require_project()
+
+        cache_key = f"cohort_viz_info:{cohort_id}"
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        try:
+            viz_info = cohort_mod.get_visualize_info(
+                cohort_id, project, cohort_browser=True,
+            )
+        except Exception as e:
+            raise DXCohortError(
+                f"Failed to get viz info for cohort '{cohort_id}': {e}",
+                dx_error=e,
+            ) from e
+
+        self._cache.set(cache_key, viz_info)
+        return viz_info
+
+    def generate_cohort_sql(
+        self,
+        cohort_id: str,
+        entity_fields: list[str] | None = None,
+        *,
+        refresh: bool = False,
+    ) -> str:
+        """生成 cohort 的 SQL 查询字符串。
+
+        调用 vizserver /viz-query/3.0/{dataset}/raw-cohort-query 端点。
+
+        Args:
+            cohort_id: Cohort record ID。
+            entity_fields: 要查询的字段列表（如 ["eid", "participant.sex"]）。
+                为 None 时只返回基于 filters 的 participant ID 列表 SQL。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            SQL 字符串（末尾带分号）。
+        """
+        self._ensure_connected()
+        project = self._require_project()
+
+        viz_info = self.get_cohort_viz_info(cohort_id, refresh=refresh)
+
+        filter_payload: dict[str, Any] = {
+            "project_context": project,
+            "filters": viz_info.get("filters", {}),
+        }
+        if viz_info.get("baseSql"):
+            filter_payload["base_sql"] = viz_info["baseSql"]
+
+        if entity_fields:
+            filter_payload["fields"] = [
+                {f: "$".join(f.split("."))} for f in entity_fields
+            ]
+
+        resource = (
+            viz_info["url"]
+            + "/viz-query/3.0/"
+            + viz_info["dataset"]
+            + "/raw-cohort-query"
+        )
+        try:
+            resp = dxpy.DXHTTPRequest(
+                resource=resource, data=filter_payload, prepend_srv=False,
+            )
+        except Exception as e:
+            raise DXCohortError(
+                f"Failed to generate cohort SQL for '{cohort_id}': {e}",
+                dx_error=e,
+            ) from e
+
+        if "error" in resp:
+            raise DXCohortError(
+                f"vizserver error: {resp['error']}",
+            )
+        return resp["sql"] + ";"
+
+    def preview_cohort_data(
+        self,
+        cohort_id: str,
+        entity_fields: list[str],
+        *,
+        limit: int = 100,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        """预览 cohort 数据（不创建 cohort record）。
+
+        通过 vizserver /data/3.0/raw 端点执行查询并返回结果。
+        与 extract_cohort_fields 的区别是：本方法不需要 cohort.details.fields 非空。
+
+        注意：字段格式为 ``entity$field``（如 ``participant$eid``），
+        而非 dataset 的 ``entity.field`` 格式。
+
+        Args:
+            cohort_id: Cohort record ID。
+            entity_fields: 要查询的字段列表（如 ``["participant$eid", "participant$sex"]``）。
+            limit: 返回的最大行数（前端截取，不走 API limit）。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            查询结果的 DataFrame。
+        """
+        self._ensure_connected()
+        project = self._require_project()
+
+        if not entity_fields:
+            return pd.DataFrame()
+
+        cache_key = f"cohort_preview:{cohort_id}:{','.join(sorted(entity_fields))}:{limit}"
+        if refresh:
+            self._cache.last_status = CacheStatus.SKIP
+        else:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        viz_info = self.get_cohort_viz_info(cohort_id, refresh=refresh)
+
+        # Cohort API requires entity$field format (not entity.field like datasets)
+        payload: dict[str, Any] = {
+            "project_context": project,
+            "fields": [{f: f} for f in entity_fields],
+        }
+        if viz_info.get("baseSql"):
+            payload["base_sql"] = viz_info["baseSql"]
+        if viz_info.get("filters"):
+            payload["filters"] = viz_info["filters"]
+
+        resource = (
+            viz_info["url"] + "/data/3.0/" + viz_info["dataset"] + "/raw"
+        )
+        try:
+            resp = dxpy.DXHTTPRequest(
+                resource=resource, data=payload, prepend_srv=False,
+            )
+        except Exception as e:
+            raise DXCohortError(
+                f"Failed to preview cohort data for '{cohort_id}': {e}",
+                dx_error=e,
+            ) from e
+
+        if "error" in resp:
+            raise DXCohortError(
+                f"vizserver error: {resp.get('error')}",
+            )
+
+        results = resp.get("results", [])
+        df = pd.DataFrame(results[:limit])
+        self._cache.set(cache_key, df)
+        logger.info(
+            "Previewed %d rows from cohort '%s'",
+            len(df),
             cohort_id,
         )
         return df

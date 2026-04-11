@@ -305,6 +305,27 @@ class IDXClient(ABC):
             DataFrame，包含 eid 列和请求的字段列。
         """
 
+    @abstractmethod
+    def generate_dataset_sql(
+        self,
+        entity_fields: list[str],
+        dataset_ref: str | None = None,
+        *,
+        refresh: bool = False,
+    ) -> str:
+        """生成数据集的 SQL 查询字符串。
+
+        调用 vizserver /viz-query/3.0/{dataset}/raw-query 端点生成完整 SQL。
+
+        Args:
+            entity_fields: 要查询的字段列表（如 ["eid", "participant.sex"]）。
+            dataset_ref: 数据集引用。为 None 时自动查找。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            生成的 SQL 字符串。
+        """
+
     # ── Cohort 操作 ──────────────────────────────────────────────────────
 
     @abstractmethod
@@ -442,6 +463,69 @@ class IDXClient(ABC):
 
         Raises:
             DXCohortError: cohort 无关联字段或提取失败。
+        """
+
+    @abstractmethod
+    def get_cohort_viz_info(
+        self, cohort_id: str, *, refresh: bool = False,
+    ) -> dict[str, Any]:
+        """获取 cohort 的 vizserver viz_info。
+
+        包含 url、dataset、recordTypes、baseSql、filters 等字段，
+        用于生成 SQL 或预览数据。
+
+        Args:
+            cohort_id: Cohort record ID (record-xxxx)。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            viz_info dict，包含 url、dataset、filters、baseSql 等字段。
+        """
+
+    @abstractmethod
+    def generate_cohort_sql(
+        self,
+        cohort_id: str,
+        entity_fields: list[str] | None = None,
+        *,
+        refresh: bool = False,
+    ) -> str:
+        """生成 cohort 的 SQL 查询字符串。
+
+        调用 vizserver /viz-query/3.0/{dataset}/raw-cohort-query 端点。
+
+        Args:
+            cohort_id: Cohort record ID。
+            entity_fields: 要查询的字段列表（如 ["eid", "participant.sex"]）。
+                为 None 时只返回基于 filters 的 participant ID 列表 SQL。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            SQL 字符串（末尾带分号）。
+        """
+
+    @abstractmethod
+    def preview_cohort_data(
+        self,
+        cohort_id: str,
+        entity_fields: list[str],
+        *,
+        limit: int = 100,
+        refresh: bool = False,
+    ) -> pd.DataFrame:
+        """预览 cohort 数据（不创建 cohort record）。
+
+        通过 vizserver /data/3.0/raw 端点执行查询并返回结果。
+        与 extract_cohort_fields 的区别是：本方法不需要 cohort.details.fields 非空。
+
+        Args:
+            cohort_id: Cohort record ID。
+            entity_fields: 要查询的字段列表（如 ["eid", "participant.sex"]）。
+            limit: 返回的最大行数（前端截取，不走 API limit）。
+            refresh: 为 True 时跳过缓存。
+
+        Returns:
+            查询结果的 DataFrame。
         """
 
     # ── Job 操作 ──────────────────────────────────────────────────────
